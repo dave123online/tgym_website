@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">Pricing</p>
+        <h2>Des offres claires pour chaque profil</h2>
+
+        <div class="grid-2" style="align-items:start;">
+            <div>
+                {% for plan in plans_premium %}
+                <div class="plan-premium">
+                    <p class="eyebrow">Abonnement standard</p>
+                    <h3 style="font-size:1.4rem; margin:0 0 1rem;">{{ plan.nom }}</h3>
+                    <p class="price">{{ plan.prix_fcfa|floatformat:0 }} <small>FCFA {{ plan.periode }}</small></p>
+                    {% if plan.inclus %}
+                    <ul>
+                        {% for item in plan.inclus %}
+                        <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    <a href="{{ plan.whatsapp_link }}" class="btn btn-primary" target="_blank" rel="noopener">S'inscrire via WhatsApp</a>
+                </div>
+                {% empty %}
+                <p>Formule Premium bientôt disponible.</p>
+                {% endfor %}
+            </div>
+
+            <div>
+                <p class="eyebrow">Formules flexibles</p>
+                <h3 style="margin:0 0 1rem;">À la carte</h3>
+                {% for plan in plans_flexibles %}
+                <div class="plan-flex">
+                    <div>
+                        <p class="price">{{ plan.prix_fcfa|floatformat:0 }} <small>FCFA</small></p>
+                        <p class="desc">{{ plan.description_courte }}</p>
+                    </div>
+                    <a href="{{ plan.whatsapp_link }}" class="btn btn-outline" target="_blank" rel="noopener">S'inscrire</a>
+                </div>
+                {% empty %}
+                <p>Formules flexibles bientôt disponibles.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

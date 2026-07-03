@@ -1,0 +1,10 @@
+__pycache__
+*.docx
+*sql*
+media/*
+package*
+
+# Secrets — ne jamais committer
+.env
+setup
+staticfiles/

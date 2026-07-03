@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        <h1>{{ site_config.nom }}</h1>
+        <p class="slogan">{{ site_config.slogan|upper }}</p>
+        <p class="accroche">Une présence physique incontournable, désormais propulsée par un écosystème digital.</p>
+
+        <div class="hero-hours">
+            <div>
+                <strong>Ouvert 7j/7 — Du Lundi au Dimanche</strong>
+                <span>{{ site_config.horaires_texte }}</span>
+            </div>
+        </div>
+        <br>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Nous contacter sur WhatsApp</a>
+        <a href="{% url 'core:tarifs' %}" class="btn btn-outline">Voir les tarifs</a>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">La méthode T-GYM</p>
+        <h2>Plus qu'une salle, un accompagnement à 360°</h2>
+        <div class="grid-3">
+            <div class="card">
+                <div class="card-icon">🏋️</div>
+                <h3>Physique</h3>
+                <p>Des exercices dûment sélectionnés par un coach professionnel pour maximiser les résultats dans un délai court.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">🍎</div>
+                <h3>Nutritionnel</h3>
+                <p>Un plan de rééquilibrage alimentaire évolutif, adapté aux habitudes de l'adhérent pour éviter la monotonie.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">🧠</div>
+                <h3>Psychologique</h3>
+                <p>Une assistance mentale pour surmonter l'effort, disponible même à domicile.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Programme phare</p>
+        <h2 style="color:var(--white);">45 jours pour maigrir</h2>
+        <p style="color:var(--grey); max-width:600px;">Notre programme intensif d'accompagnement physique, nutritionnel et psychologique sur 45 jours, pensé pour des résultats visibles et durables.</p>
+        <a href="{% url 'core:methode' %}" class="btn btn-primary">En savoir plus</a>
+    </div>
+</section>
+
+{% if plan_populaire %}
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Formule la plus choisie</p>
+        <h2>{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
+        <a href="{% url 'core:tarifs' %}" class="btn btn-primary">Voir toutes les formules</a>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
