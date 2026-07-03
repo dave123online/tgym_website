@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from abonnements.models import Plan
+from coaching.models import Programme
 from core.models import Annonce, SiteConfig
 
 
@@ -67,4 +68,30 @@ class Command(BaseCommand):
             defaults={"actif": True},
         )
         self.stdout.write(self.style.SUCCESS("Annonce de démo créée."))
+
+        Programme.objects.update_or_create(
+            slug="45-jours-pour-maigrir",
+            defaults=dict(
+                titre="45 jours pour maigrir",
+                accroche="Un accompagnement intensif combinant entraînement ciblé, nutrition dynamique et suivi psychologique pour des résultats visibles et durables.",
+                duree="45 jours",
+                objectif=(
+                    "Perdre du poids durablement en combinant les 3 piliers de la méthode T-GYM : "
+                    "des séances rigoureusement encadrées par un coach professionnel, un rééquilibrage "
+                    "alimentaire progressif basé sur la variété des fruits et légumes, et un suivi "
+                    "psychologique disponible même à domicile pour tenir sur la durée."
+                ),
+                inclus=[
+                    "Suivi coach quotidien",
+                    "Plan nutritionnel évolutif",
+                    "Assistance psychologique à distance",
+                    "Contrôle de résultat régulier",
+                ],
+                prix_note="Inclus dans l'abonnement Premium — contactez-nous pour les modalités hors abonnement.",
+                est_phare=True,
+                actif=True,
+                ordre_affichage=1,
+            ),
+        )
+        self.stdout.write(self.style.SUCCESS("Programme phare '45 jours pour maigrir' créé."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))

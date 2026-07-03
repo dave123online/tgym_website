@@ -44,14 +44,16 @@
     </div>
 </section>
 
+{% if programme_phare %}
 <section class="section section--dark">
     <div class="container">
         <p class="eyebrow">Programme phare</p>
-        <h2 style="color:var(--white);">45 jours pour maigrir</h2>
-        <p style="color:var(--grey); max-width:600px;">Notre programme intensif d'accompagnement physique, nutritionnel et psychologique sur 45 jours, pensé pour des résultats visibles et durables.</p>
-        <a href="{% url 'core:methode' %}" class="btn btn-primary">En savoir plus</a>
+        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
+        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
+        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
     </div>
 </section>
+{% endif %}
 
 {% if plan_populaire %}
 <section class="section section--grey">

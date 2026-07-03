@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        {% if programme.est_phare %}<p class="eyebrow">Programme phare</p>{% endif %}
+        <h1 style="font-size:2.4rem;">{{ programme.titre }}</h1>
+        <p class="accroche">{{ programme.accroche }}</p>
+        <div class="hero-hours">
+            <div>
+                <strong>Durée</strong>
+                <span>{{ programme.duree }}</span>
+            </div>
+        </div>
+        <br>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">M'inscrire à ce programme sur WhatsApp</a>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container grid-2" style="align-items:start;">
+        <div>
+            <p class="eyebrow">Objectif</p>
+            <h2 style="font-size:1.5rem;">Ce que ce programme vise pour vous</h2>
+            <p>{{ programme.objectif|linebreaks }}</p>
+        </div>
+
+        {% if programme.inclus %}
+        <div class="card">
+            <h3>Ce qui est inclus</h3>
+            <ul style="padding-left:1.1rem;">
+                {% for item in programme.inclus %}
+                <li style="margin-bottom:0.4rem;">{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{% if programme.prix_fcfa or programme.prix_note %}
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Tarif</p>
+        {% if programme.prix_fcfa %}
+            <h2>{{ programme.prix_fcfa|floatformat:0 }} FCFA</h2>
+        {% endif %}
+        {% if programme.prix_note %}
+            <p>{{ programme.prix_note }}</p>
+        {% endif %}
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Réserver ma place sur WhatsApp</a>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}

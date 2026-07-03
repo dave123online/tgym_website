@@ -37,13 +37,15 @@
     </div>
 </section>
 
+{% if programme_phare %}
 <section class="section section--dark">
     <div class="container">
         <p class="eyebrow">Programme phare</p>
-        <h2 style="color:var(--white);">45 jours pour maigrir</h2>
-        <p style="color:var(--grey); max-width:600px;">Un programme intensif combinant les 3 piliers ci-dessus sur 45 jours, pour des résultats visibles et durables.</p>
-        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Je m'intéresse au programme</a>
+        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
+        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
+        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">Je m'intéresse au programme</a>
     </div>
 </section>
+{% endif %}
 
 {% endblock %}
