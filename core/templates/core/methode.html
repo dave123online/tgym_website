@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">La méthode T-GYM</p>
+        <h2 style="color:var(--white);">Plus qu'une salle, un accompagnement à 360°</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container grid-3">
+        <div class="card">
+            <div class="card-icon">🏋️</div>
+            <h3>Entraînement ciblé</h3>
+            <p>Des exercices rigoureusement sélectionnés par un coach professionnel pour maximiser les résultats rapidement.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">🍎</div>
+            <h3>Nutrition dynamique</h3>
+            <p>Un rééquilibrage alimentaire évolutif basé sur la variation des fruits et légumes, adapté aux habitudes de l'adhérent pour que manger sainement ne devienne pas une corvée.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">🧠</div>
+            <h3>Suivi psychologique & à distance</h3>
+            <p>Une assistance mentale pour surmonter l'effort, avec un suivi disponible même à domicile pour répondre aux doutes de l'adhérent.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Contrôle qualité</p>
+        <h2>Des bilans réguliers, des résultats mesurés</h2>
+        <p style="max-width:600px;">Un contrôle régulier des résultats permet d'évaluer la productivité de chaque abonné et d'ajuster l'accompagnement en continu.</p>
+    </div>
+</section>
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Programme phare</p>
+        <h2 style="color:var(--white);">45 jours pour maigrir</h2>
+        <p style="color:var(--grey); max-width:600px;">Un programme intensif combinant les 3 piliers ci-dessus sur 45 jours, pour des résultats visibles et durables.</p>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Je m'intéresse au programme</a>
+    </div>
+</section>
+
+{% endblock %}

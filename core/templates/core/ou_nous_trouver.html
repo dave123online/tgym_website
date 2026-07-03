@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Implantation & accessibilité</p>
+        <h2 style="color:var(--white);">Un ancrage géographique fort à Calavi</h2>
+
+        <div class="grid-2" style="align-items:start; margin-top:2rem;">
+            <div>
+                <div class="card" style="margin-bottom:1rem;">
+                    <h3 style="color:var(--yellow);">Situation</h3>
+                    <p>{{ site_config.adresse_zone }}, juste sous les lignes haute tension.</p>
+                </div>
+                <div class="card" style="margin-bottom:1rem;">
+                    <h3 style="color:var(--yellow);">Repères visuels</h3>
+                    <p>{{ site_config.adresse_reperes }}</p>
+                </div>
+                <div class="card">
+                    <h3 style="color:var(--yellow);">Signalétique</h3>
+                    <p>Une grande infrastructure peinte en jaune et noir, immédiatement reconnaissable.</p>
+                </div>
+            </div>
+
+            <div>
+                <div class="card" style="min-height:280px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:1.25rem;">
+                    <div style="font-size:3rem;">📍</div>
+                    <div>
+                        <h3 style="color:var(--yellow); margin:0 0 0.4rem;">{{ site_config.nom }}</h3>
+                        <p style="margin:0;">{{ site_config.adresse_zone }}</p>
+                    </div>
+                    <a href="{{ site_config.google_maps_url }}" class="btn btn-primary" target="_blank" rel="noopener">Ouvrir dans Google Maps</a>
+                </div>
+                <br>
+                <a href="{{ contact_link }}" class="btn btn-outline" target="_blank" rel="noopener">Demander l'itinéraire sur WhatsApp</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

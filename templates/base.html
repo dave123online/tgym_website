@@ -1,0 +1,58 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+</head>
+<body>
+
+    {% if annonce_active %}
+    <div class="top-bar">
+        <div class="top-bar__track">
+            {% if annonce_active.lien %}
+                <a href="{{ annonce_active.lien }}">📢 {{ annonce_active.message }}</a>
+            {% else %}
+                📢 {{ annonce_active.message }}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <header class="header">
+        <div class="container header__inner">
+            <a href="{% url 'core:accueil' %}" class="logo">{{ site_config.nom }}</a>
+            <nav class="nav">
+                <a href="{% url 'core:accueil' %}">Accueil</a>
+                <a href="{% url 'core:methode' %}">La Méthode</a>
+                <a href="{% url 'core:tarifs' %}">Tarifs</a>
+                <a href="{% url 'core:ou_nous_trouver' %}">Où nous trouver</a>
+                <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p><strong>{{ site_config.nom }}</strong> — {{ site_config.slogan }}</p>
+            <p>{{ site_config.horaires_texte }}</p>
+            <p>
+                WhatsApp : {{ site_config.whatsapp_numero_1 }} / {{ site_config.whatsapp_numero_2 }}
+                {% if site_config.facebook_url %}
+                    &nbsp;•&nbsp; <a href="{{ site_config.facebook_url }}" target="_blank" rel="noopener">Facebook</a>
+                {% endif %}
+            </p>
+            <p>{{ site_config.adresse_zone }}</p>
+        </div>
+    </footer>
+
+    <a class="wa-float" href="{% block wa_float_link %}{{ contact_link|default:'#' }}{% endblock %}" target="_blank" rel="noopener" aria-label="Contacter T-GYM sur WhatsApp">💬</a>
+
+</body>
+</html>
