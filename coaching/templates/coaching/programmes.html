@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Nos programmes</p>
+        <h2 style="color:var(--white);">Des accompagnements pensés pour des résultats concrets</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="grid-3">
+            {% for programme in programmes %}
+            <div class="card">
+                {% if programme.est_phare %}<p class="eyebrow">Programme phare</p>{% endif %}
+                <h3>{{ programme.titre }}</h3>
+                <p>{{ programme.accroche }}</p>
+                <p style="color:var(--yellow-deep); font-weight:700; margin-top:0.5rem;">{{ programme.duree }}</p>
+                <br>
+                <a href="{% url 'coaching:programme_detail' programme.slug %}" class="btn btn-primary">Découvrir</a>
+            </div>
+            {% empty %}
+            <p>Aucun programme disponible pour le moment.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
