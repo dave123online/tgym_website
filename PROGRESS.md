@@ -193,6 +193,37 @@ le diff contre son historique réel plutôt que contre une reconstruction.
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
 
+## Dark mode + correction prix programme phare (09/07/2026)
+✅ **Fait et testé** — aucune nouvelle migration nécessaire (pas de
+nouveau champ de modèle)
+
+**Prix "45 jours pour maigrir"** : 35 000 FCFA (`prix_fcfa` renseigné
+dans `seed_tgym.py`, idempotent via `update_or_create` — relancer
+`python manage.py seed_tgym` met à jour le prix sans dupliquer, ou
+modifier directement dans `/admin/coaching/programme/`).
+
+**Dark mode** : interrupteur ☀️/🌙 dans la nav, persistant
+(`localStorage`), respecte `prefers-color-scheme` par défaut tant que
+l'utilisateur n'a pas cliqué. Script anti-flash dans le `<head>` pour
+éviter un clignotement clair→sombre au chargement.
+
+Approche : tokens sémantiques ajoutés dans `theme.css`
+(`--bg`, `--bg-alt`, `--card-bg`, `--text`, `--text-muted`,
+`--text-muted-2`, `--border`, `--border-strong`, `--danger`), distincts
+des couleurs de marque brutes (`--black`/`--yellow`/`--white`
+inchangées). Seules les surfaces "page normale" (fond de page, cartes,
+texte courant, mur d'actus, formulaires) suivent le thème — le header,
+le hero, le footer et les blocs `.section--dark` restent volontairement
+toujours sombres (déjà la marque T-GYM, pas de changement attendu ni
+souhaité là-dessus). Ajout au passage d'un style générique pour les
+champs de formulaire (`input`, `textarea`, `select`), qui n'avaient
+jusqu'ici aucun style custom et seraient restés blancs en dark mode
+(connexion, inscription adhérent, changement de mot de passe).
+
+Testé : suite complète 104/104 verts, CSS vérifié syntaxiquement
+(accolades équilibrées, aucun sélecteur cassé), toggle présent sur la
+page, prix confirmé en base après seed.
+
 ## Fix — vignettes témoignages noires sans poster (09/07/2026)
 ✅ **Fait et testé**
 Constat de David : les vignettes témoignages sans `apercu` uploadé

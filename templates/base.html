@@ -9,6 +9,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+    <script>
+        // Appliqué avant le rendu pour éviter un flash clair→sombre au
+        // chargement. Lit la préférence enregistrée ; sinon ne fait rien
+        // et laisse le CSS suivre prefers-color-scheme automatiquement.
+        (function () {
+            try {
+                var theme = localStorage.getItem("tgym-theme");
+                if (theme === "dark" || theme === "light") {
+                    document.documentElement.setAttribute("data-theme", theme);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
 
@@ -46,6 +59,10 @@
                     <a href="{% url 'comptes:connexion' %}">Connexion</a>
                 {% endif %}
                 <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Changer de thème">
+                    <span class="theme-toggle__icon theme-toggle__icon--sun">☀️</span>
+                    <span class="theme-toggle__icon theme-toggle__icon--moon">🌙</span>
+                </button>
             </nav>
         </div>
     </header>
@@ -154,6 +171,25 @@
                 submitBtn.disabled = false;
                 input.focus();
             }
+        });
+    })();
+    </script>
+
+    <script>
+    (function () {
+        const bouton = document.getElementById("theme-toggle");
+        if (!bouton) return;
+
+        function themeActuel() {
+            const enregistre = document.documentElement.getAttribute("data-theme");
+            if (enregistre) return enregistre;
+            return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+
+        bouton.addEventListener("click", () => {
+            const prochain = themeActuel() === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", prochain);
+            try { localStorage.setItem("tgym-theme", prochain); } catch (e) {}
         });
     })();
     </script>
