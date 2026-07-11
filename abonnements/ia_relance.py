@@ -68,11 +68,13 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
         return _message_secours(abonnement), False
 
     try:
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(_prompt(abonnement))
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=_prompt(abonnement),
+        )
         texte = (response.text or "").strip()
         if not texte:
             raise ValueError("Réponse vide de Gemini")

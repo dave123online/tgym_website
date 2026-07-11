@@ -23,47 +23,54 @@ class Command(BaseCommand):
         config.save()
         self.stdout.write(self.style.SUCCESS("SiteConfig mise à jour."))
 
-        Plan.objects.all().delete()
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="Premium",
-            categorie=Plan.Categorie.PREMIUM,
-            prix_fcfa=25000,
-            periode="/ mois",
-            description_courte="Tout compris",
-            inclus=[
-                "Accès salle",
-                "Suivi coach permanent",
-                "Contrôle de résultat",
-                "Accompagnement nutritionnel",
-            ],
-            is_populaire=True,
-            ordre_affichage=1,
+            defaults=dict(
+                categorie=Plan.Categorie.PREMIUM,
+                prix_fcfa=25000,
+                periode="/ mois",
+                description_courte="Tout compris",
+                inclus=[
+                    "Accès salle",
+                    "Suivi coach permanent",
+                    "Contrôle de résultat",
+                    "Accompagnement nutritionnel",
+                ],
+                is_populaire=True,
+                ordre_affichage=1,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="14 séances / mois",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=15000,
-            periode="",
-            description_courte="14 séances dans le mois",
-            ordre_affichage=2,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=15000,
+                periode="",
+                description_courte="14 séances dans le mois",
+                ordre_affichage=2,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="2 séances / semaine",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=10000,
-            periode="",
-            description_courte="2 séances par semaine",
-            ordre_affichage=3,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=10000,
+                periode="",
+                description_courte="2 séances par semaine",
+                ordre_affichage=3,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="1 séance / semaine",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=5000,
-            periode="",
-            description_courte="1 séance par semaine",
-            ordre_affichage=4,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=5000,
+                periode="",
+                description_courte="1 séance par semaine",
+                ordre_affichage=4,
+            ),
         )
-        self.stdout.write(self.style.SUCCESS("4 formules tarifaires créées."))
+        self.stdout.write(self.style.SUCCESS("4 formules tarifaires à jour."))
 
         Annonce.objects.get_or_create(
             message="Nouveau programme : 45 jours pour maigrir — places limitées, inscrivez-vous sur WhatsApp !",
