@@ -9,6 +9,52 @@
   --grey-dark: #8a8a8a;
   --grey-light: #f7f7f7;
   --radius: 10px;
+
+  /* ---------- Tokens sémantiques (dépendent du thème clair/sombre) ----------
+     Le header, le hero, le footer et les blocs .section--dark restent
+     volontairement toujours sombres (couleurs de marque fixes ci-dessus,
+     var(--black)/var(--white) directement) : seules les surfaces "page
+     normale" (fond de page, cartes, texte courant) suivent le thème. */
+  --bg: var(--white);
+  --bg-alt: var(--grey-light);
+  --card-bg: var(--white);
+  --text: var(--black);
+  --text-muted: #555;
+  --text-muted-2: #777;
+  --border: #eee;
+  --border-strong: #ddd;
+  --danger: #c0392b;
+}
+
+[data-theme="dark"] {
+  --danger: #e0574a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --danger: #e0574a; }
+}
+
+[data-theme="dark"] {
+  --bg: #121212;
+  --bg-alt: #1a1a1a;
+  --card-bg: #1e1e1e;
+  --text: #f0f0f0;
+  --text-muted: #b0b0b0;
+  --text-muted-2: #929292;
+  --border: #2a2a2a;
+  --border-strong: #363636;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121212;
+    --bg-alt: #1a1a1a;
+    --card-bg: #1e1e1e;
+    --text: #f0f0f0;
+    --text-muted: #b0b0b0;
+    --text-muted-2: #929292;
+    --border: #2a2a2a;
+    --border-strong: #363636;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -16,9 +62,10 @@
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  background: var(--white);
-  color: var(--black);
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 h1, h2, .logo, .section h2 {
@@ -139,7 +186,7 @@ a { color: inherit; text-decoration: none; }
 /* ---------- Sections ---------- */
 .section { padding: 3.5rem 0; }
 .section--dark { background: var(--black); color: var(--white); }
-.section--grey { background: var(--grey-light); }
+.section--grey { background: var(--bg-alt); }
 .eyebrow {
   color: var(--yellow-deep);
   font-weight: 800;
@@ -159,9 +206,10 @@ a { color: inherit; text-decoration: none; }
 }
 
 .card {
-  background: var(--grey-light);
+  background: var(--card-bg);
   border-radius: var(--radius);
   padding: 1.75rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .section--dark .card { background: var(--black-soft); }
 .card-icon {
@@ -173,7 +221,7 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 1rem;
 }
 .card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
-.card p { color: #444; font-size: 0.92rem; margin: 0; }
+.card p { color: var(--text-muted-2); font-size: 0.92rem; margin: 0; }
 .section--dark .card p { color: var(--grey); }
 
 .badge {
@@ -187,12 +235,59 @@ a { color: inherit; text-decoration: none; }
 .badge--warn { background: #fff3cd; color: #7a5b00; }
 .badge--muted { background: #eee; color: #666; }
 
+/* ---------- Interrupteur thème clair/sombre ---------- */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--grey-dark);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+.theme-toggle__icon { font-size: 0.95rem; line-height: 1; display: none; }
+/* Par défaut (pas de préférence enregistrée) : suit prefers-color-scheme */
+.theme-toggle__icon--sun { display: inline; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle__icon--sun { display: none; }
+  :root:not([data-theme="light"]) .theme-toggle__icon--moon { display: inline; }
+}
+/* Préférence enregistrée explicitement (l'utilisateur a cliqué) */
+[data-theme="dark"] .theme-toggle__icon--sun { display: none; }
+[data-theme="dark"] .theme-toggle__icon--moon { display: inline; }
+[data-theme="light"] .theme-toggle__icon--sun { display: inline; }
+[data-theme="light"] .theme-toggle__icon--moon { display: none; }
+
 .table-simple { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
 .table-simple th, .table-simple td {
   text-align: left; padding: 0.5rem 0.6rem; font-size: 0.88rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border);
 }
-.table-simple th { color: #777; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+.table-simple th { color: var(--text-muted-2); font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+
+/* ---------- Champs de formulaire (connexion, inscription...) ---------- */
+input[type="text"], input[type="password"], input[type="email"],
+input[type="tel"], input[type="number"], input[type="date"],
+input[type="search"], textarea, select {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.92rem;
+  font-family: inherit;
+  width: 100%;
+  max-width: 340px;
+}
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--yellow);
+  outline-offset: 1px;
+}
+.text-danger { color: var(--danger, #e05252); }
 
 /* ---------- Pricing ---------- */
 .plan-premium {
@@ -209,7 +304,7 @@ a { color: inherit; text-decoration: none; }
 .plan-premium li::before { content: "✔ "; color: var(--yellow); font-weight: 800; }
 
 .plan-flex {
-  background: var(--grey-light);
+  background: var(--bg-alt);
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   display: flex;
@@ -221,7 +316,7 @@ a { color: inherit; text-decoration: none; }
 }
 .plan-flex .price { font-size: 1.5rem; font-weight: 800; }
 .plan-flex .price small { color: var(--yellow-deep); font-weight: 700; font-size: 0.85rem; }
-.plan-flex .desc { color: #555; font-size: 0.9rem; }
+.plan-flex .desc { color: var(--text-muted); font-size: 0.9rem; }
 
 /* ---------- Footer ---------- */
 .footer {
@@ -273,7 +368,7 @@ a { color: inherit; text-decoration: none; }
   max-width: calc(100vw - 2rem);
   height: 420px;
   max-height: calc(100vh - 8rem);
-  background: var(--white);
+  background: var(--card-bg);
   border-radius: var(--radius);
   box-shadow: 0 10px 40px rgba(0,0,0,0.25);
   display: none;
@@ -318,24 +413,26 @@ a { color: inherit; text-decoration: none; }
 }
 .chatbot-msg--bot {
   align-self: flex-start;
-  background: var(--grey-light);
-  color: var(--black);
+  background: var(--bg-alt);
+  color: var(--text);
   border-bottom-left-radius: 3px;
 }
 .chatbot-msg--typing { color: #999; font-style: italic; }
 
 .chatbot-panel__form {
   display: flex;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border);
   padding: 0.6rem;
   gap: 0.5rem;
 }
 .chatbot-panel__form input {
   flex: 1;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 0.5rem 0.85rem;
   font-size: 0.85rem;
+  background: var(--card-bg);
+  color: var(--text);
 }
 .chatbot-panel__form button {
   background: var(--yellow);
@@ -388,7 +485,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Actus preview (accueil) ---------- */
 .actu-preview-card {
-  background: var(--grey-light);
+  background: var(--bg-alt);
   border-radius: var(--radius);
   overflow: hidden;
   display: flex;
@@ -401,7 +498,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--yellow-deep); letter-spacing: 1px; margin-bottom: 0.35rem;
 }
 .actu-preview-card h3 { margin: 0 0 0.5rem; font-size: 1.05rem; }
-.actu-preview-card p { color: #555; font-size: 0.88rem; margin: 0 0 1rem; flex: 1; }
+.actu-preview-card p { color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem; flex: 1; }
 
 /* ---------- Mini bloc localisation/horaires (accueil) ---------- */
 .info-strip {
@@ -433,7 +530,7 @@ a { color: inherit; text-decoration: none; }
   padding: 3.5rem 1.25rem;
 }
 .cta-final h2 { margin-bottom: 0.5rem; }
-.cta-final p { color: #555; max-width: 480px; margin: 0 auto 1.75rem; }
+.cta-final p { color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; }
 
 /* ---------- Motif "câble" (signature — clin d'œil aux lignes haute
    tension au-dessus de la salle) : séparateur discret entre deux

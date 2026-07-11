@@ -100,7 +100,7 @@
             <div class="programme-phare__contenu">
                 <p class="eyebrow">{{ programme_phare.duree }}</p>
                 <h2>{{ programme_phare.titre }}</h2>
-                <p style="color:#555; max-width:520px; margin-bottom:1.5rem;">{{ programme_phare.accroche }}</p>
+                <p style="color:var(--text-muted); max-width:520px; margin-bottom:1.5rem;">{{ programme_phare.accroche }}</p>
                 <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
             </div>
         </div>
