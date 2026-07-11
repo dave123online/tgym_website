@@ -193,6 +193,47 @@ le diff contre son historique réel plutôt que contre une reconstruction.
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
 
+## Déploiement — DATABASE_URL (Neon) + WhiteNoise (09/07/2026)
+✅ **Fait et testé**
+
+**Base de données** : `DATABASES` utilise maintenant `dj_database_url`,
+piloté par la variable d'environnement `DATABASE_URL`. Comportement :
+- **Absente** (cas local par défaut) → SQLite comme avant, rien à
+  changer pour développer en local
+- **Présente** (Neon en prod) → Postgres, `sslmode=require` forcé
+  automatiquement (obligatoire côté Neon), `conn_max_age=600` pour
+  réutiliser les connexions plutôt que d'en rouvrir une à chaque requête
+- Testé : parsing vérifié dans les deux cas (absente → sqlite3 confirmé ;
+  présente avec une URL Neon factice → postgresql + host + sslmode
+  correctement extraits)
+
+**Statique** : WhiteNoise ajouté (middleware juste après
+`SecurityMiddleware`, comme recommandé) + `CompressedManifestStaticFilesStorage`
+(fichiers hashés + compressés gzip/brotli, servis directement par
+l'app — pas besoin de S3/CDN à l'échelle de T-GYM). Point noté depuis
+longtemps dans ce fichier comme "pas commencé", maintenant fait.
+Testé : `collectstatic` fonctionne (126 fichiers, 378 après
+post-traitement), CSS servi en HTTP 200 via WhiteNoise en local.
+
+`requirements.txt` : ajout de `dj-database-url`, `psycopg2-binary`,
+`whitenoise`.
+
+Suite complète toujours 104/104 verts après ces changements.
+
+**Reste à faire pour le déploiement Render** :
+- `DATABASE_URL` de Neon à récupérer et poser en variable d'env sur Render
+- `IS_PRODUCTION=True`, `SECRET_KEY` (neuve), `DEBUG=False`,
+  `ALLOWED_HOSTS` (voir section sécurité plus haut — ces variables ne
+  sont pas encore posées nulle part, c'est le prochain chantier)
+- `Procfile` / commande de démarrage (`gunicorn` pas encore dans
+  `requirements.txt`)
+- `python manage.py migrate` + `createsuperuser` à lancer une fois sur
+  la base Neon fraîche (mot de passe fort choisi à ce moment, voir note
+  du 09/07/2026 sur le sujet)
+- Cache partagé (Redis) si plusieurs workers Render, pour que les
+  throttles (chatbot, anti-bruteforce) restent valables entre workers
+  (déjà noté plus haut, toujours pas tranché)
+
 ## Migration SDK Gemini — google-generativeai → google-genai (09/07/2026)
 ✅ **Fait et testé**
 `google-generativeai` est déprécié (même migration déjà faite sur le
