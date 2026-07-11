@@ -11,21 +11,63 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Charge .env s'il existe (développement local). En production (Render...),
+# les variables sont fournies directement par la plateforme — load_dotenv()
+# ne fait rien de mal dans ce cas (pas de fichier .env trouvé = no-op).
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%5u)k0)ifbo38)yq1=9tfm@&31d=e1yno_@_2k$+5@k^zx-4z!'
+#
+# Suite à l'audit sécurité du 09/07/2026 : la clé par défaut n'est plus
+# utilisée dès que IS_PRODUCTION=True est explicitement posé — dans ce
+# cas, une SECRET_KEY manquante fait échouer le démarrage immédiatement
+# plutôt que de faire tourner le site avec une clé connue et documentée
+# dans ce dépôt (ce qui permettrait de forger des cookies de session, y
+# compris admin, sans connaître aucun mot de passe).
+#
+# IS_PRODUCTION est un interrupteur EXPLICITE (pas déduit d'ALLOWED_HOSTS
+# ou d'un autre réglage) : à poser à True uniquement sur l'environnement
+# Render de prod. En local, on ne le pose jamais -> DEBUG peut rester
+# True, SECRET_KEY/ALLOWED_HOSTS peuvent rester vides, rien ne bloque.
+IS_PRODUCTION = os.environ.get("IS_PRODUCTION", "False") == "True"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+
+# Ex. ALLOWED_HOSTS="tgym.example.com,www.tgym.example.com" (séparés par des virgules)
+_allowed_hosts_env = os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(",") if h.strip()]
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = []
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise ImproperlyConfigured(
+            "SECRET_KEY manquante alors que IS_PRODUCTION=True. Définissez "
+            "la variable d'environnement SECRET_KEY avant de démarrer. Ne "
+            "jamais réutiliser une clé qui a pu être commitée ou partagée."
+        )
+    # Local pur (IS_PRODUCTION non posé) : clé volontairement préfixée
+    # "django-insecure-", jamais utilisée si IS_PRODUCTION=True.
+    SECRET_KEY = "django-insecure-%5u)k0)ifbo38)yq1=9tfm@&31d=e1yno_@_2k$+5@k^zx-4z!"
+
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured(
+        "IS_PRODUCTION=True mais DEBUG n'est pas explicitement à False. "
+        "Définissez explicitement DEBUG=False avant de déployer."
+    )
 
 
 # Application definition
@@ -40,6 +82,8 @@ INSTALLED_APPS = [
     'core',
     'abonnements',
     'coaching',
+    'actualites',
+    'comptes',
 ]
 
 MIDDLEWARE = [
@@ -50,6 +94,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'comptes.middleware.AntiBruteForceMiddleware',
 ]
 
 ROOT_URLCONF = 'tgym_site.urls'
@@ -87,6 +132,10 @@ DATABASES = {
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
+AUTHENTICATION_BACKENDS = [
+    "comptes.backends.IdentifiantOuTelephoneBackend",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -122,4 +171,50 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGIN_URL = 'comptes:connexion'
+LOGIN_REDIRECT_URL = 'comptes:mon_espace'
+LOGOUT_REDIRECT_URL = 'core:accueil'
+
+# Génération des messages de relance (abonnements/ia_relance.py). Laisser
+# vide en local pour utiliser automatiquement le message de secours —
+# aucune erreur bloquante si la clé n'est pas encore fournie.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Envoi automatique via WhatsApp Business Cloud API (Meta) — voir
+# abonnements/whatsapp_api.py. Tant que ces valeurs sont vides, l'envoi
+# automatique est simplement indisponible : les messages de relance restent
+# au statut "à envoyer" pour copie manuelle par le staff (aucun blocage).
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+# Nom + langue du template Meta pré-approuvé utilisé pour la relance
+# d'abonnement (à créer et faire approuver côté Meta Business Manager).
+WHATSAPP_TEMPLATE_RELANCE = os.environ.get("WHATSAPP_TEMPLATE_RELANCE", "relance_abonnement")
+WHATSAPP_TEMPLATE_LANGUE = os.environ.get("WHATSAPP_TEMPLATE_LANGUE", "fr")
+
+# Durcissement cookies/transport — actif uniquement quand IS_PRODUCTION=True
+# (donc jamais en local, jamais par accident si quelqu'un oublie juste de
+# repasser DEBUG à False). Voir audit sécurité 09/07/2026, finding #5.
+if IS_PRODUCTION:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # 1 semaine pour commencer ; à
+    # augmenter progressivement (ex: 30 jours puis 1 an) une fois HTTPS
+    # confirmé stable sur tous les sous-domaines utilisés.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    # Render (et la plupart des PaaS) terminent le TLS en amont et
+    # transmettent la requête en HTTP côté app avec cet en-tête — sans ça,
+    # request.is_secure() serait toujours faux et SECURE_SSL_REDIRECT
+    # provoquerait une boucle de redirection.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
+
+
+

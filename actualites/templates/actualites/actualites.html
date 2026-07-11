@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Top Body News</p>
+        <h2 style="color:var(--white);">Actualités T-GYM</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="grid-3">
+            {% for actualite in actualites %}
+            <div class="card">
+                {% if actualite.is_featured %}<p class="eyebrow">À la une</p>{% endif %}
+                <p style="text-transform:uppercase; font-size:0.75rem; font-weight:700; color:var(--yellow-deep);">{{ actualite.get_categorie_display }}</p>
+                <h3>{{ actualite.titre }}</h3>
+                <p>{{ actualite.accroche }}</p>
+                <p style="color:var(--yellow-deep); font-weight:700; margin-top:0.5rem;">{{ actualite.date_publication|date:"d F Y" }}</p>
+                <br>
+                <a href="{% url 'actualites:actualite_detail' actualite.slug %}" class="btn btn-primary">Lire</a>
+            </div>
+            {% empty %}
+            <p>Aucune actualité publiée pour le moment.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        {% if actualite.is_featured %}<p class="eyebrow">À la une</p>{% endif %}
+        <p style="text-transform:uppercase; font-size:0.8rem; font-weight:700; color:var(--yellow-deep);">{{ actualite.get_categorie_display }}</p>
+        <h1 style="font-size:2.2rem;">{{ actualite.titre }}</h1>
+        <p class="accroche">{{ actualite.accroche }}</p>
+        <p style="opacity:0.8;">{{ actualite.date_publication|date:"d F Y" }}</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        {% if actualite.image %}
+        <img src="{{ actualite.image.url }}" alt="{{ actualite.titre }}" style="width:100%; max-width:800px; border-radius:12px; margin-bottom:1.5rem;">
+        {% endif %}
+        <div>{{ actualite.corps|linebreaks }}</div>
+        <br>
+        <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">← Retour aux actualités</a>
+    </div>
+</section>
+
+{% endblock %}
+
+
+

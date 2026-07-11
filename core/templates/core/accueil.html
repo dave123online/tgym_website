@@ -2,7 +2,17 @@
 
 {% block content %}
 
-<section class="hero">
+<section class="hero {% if site_config.hero_image or site_config.hero_video %}hero--media{% endif %}">
+    {% if site_config.hero_video %}
+        <video class="hero__bg" autoplay muted loop playsinline poster="{% if site_config.hero_image %}{{ site_config.hero_image.url }}{% endif %}">
+            <source src="{{ site_config.hero_video.url }}" type="video/mp4">
+        </video>
+        <div class="hero__overlay"></div>
+    {% elif site_config.hero_image %}
+        <img class="hero__bg" src="{{ site_config.hero_image.url }}" alt="Ambiance de la salle {{ site_config.nom }}">
+        <div class="hero__overlay"></div>
+    {% endif %}
+
     <div class="container">
         <h1>{{ site_config.nom }}</h1>
         <p class="slogan">{{ site_config.slogan|upper }}</p>
@@ -19,6 +29,7 @@
         <a href="{% url 'core:tarifs' %}" class="btn btn-outline">Voir les tarifs</a>
     </div>
 </section>
+<div class="cable-divider cable-divider--onlight"></div>
 
 <section class="section">
     <div class="container">
@@ -44,25 +55,135 @@
     </div>
 </section>
 
-{% if programme_phare %}
+{% if videos_generales or galerie %}
+<div class="cable-divider cable-divider--ondark"></div>
 <section class="section section--dark">
     <div class="container">
-        <p class="eyebrow">Programme phare</p>
-        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
-        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
-        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
+        <p class="eyebrow">Dans nos murs</p>
+        <h2 style="color:var(--white);">La vie à T-GYM, sur le vif</h2>
+        <div class="video-wall">
+            {% for video in videos_generales %}
+            <div class="video-wall__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <span class="video-wall__play">▶</span>
+                {% if video.legende %}<span class="video-wall__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+            {% for photo in galerie %}
+            <div class="video-wall__tile">
+                <img src="{{ photo.image.url }}" alt="{{ photo.legende|default:site_config.nom }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
+                {% if photo.legende %}<span class="video-wall__legende">{{ photo.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+<div class="cable-divider cable-divider--ondark"></div>
+{% else %}
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
+{% if programme_phare %}
+<section class="section">
+    <div class="container">
+        <div class="programme-phare">
+            {% with video_phare=videos_programme.first %}
+            <div class="programme-phare__ecran">
+                {% if video_phare %}
+                    <video src="{{ video_phare.fichier.url }}" {% if video_phare.apercu %}poster="{{ video_phare.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                {% elif galerie.first %}
+                    <img src="{{ galerie.first.image.url }}" alt="{{ programme_phare.titre }}">
+                {% endif %}
+                <span class="programme-phare__badge">Programme phare</span>
+            </div>
+            {% endwith %}
+            <div class="programme-phare__contenu">
+                <p class="eyebrow">{{ programme_phare.duree }}</p>
+                <h2>{{ programme_phare.titre }}</h2>
+                <p style="color:#555; max-width:520px; margin-bottom:1.5rem;">{{ programme_phare.accroche }}</p>
+                <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
+            </div>
+        </div>
+    </div>
+</section>
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Nous trouver</p>
+        <h2>Une salle à taille humaine, facile d'accès</h2>
+        <div class="info-strip">
+            <div class="info-strip__item">
+                <div class="info-strip__icon">📍</div>
+                <div>
+                    <h4>{{ site_config.adresse_zone }}</h4>
+                    <p>{{ site_config.adresse_reperes }}</p>
+                </div>
+            </div>
+            <div class="info-strip__item">
+                <div class="info-strip__icon">🕐</div>
+                <div>
+                    <h4>Ouvert 7j/7</h4>
+                    <p>{{ site_config.horaires_texte }}</p>
+                </div>
+            </div>
+            <div class="info-strip__item">
+                <div class="info-strip__icon">💬</div>
+                <div>
+                    <h4>Une question avant de venir ?</h4>
+                    <p>Écrivez-nous directement sur WhatsApp, on répond vite.</p>
+                </div>
+            </div>
+        </div>
+        <br>
+        <a href="{{ site_config.google_maps_url }}" target="_blank" rel="noopener" class="btn btn-outline">Voir l'itinéraire</a>
+    </div>
+</section>
+
+{% if actus_recentes %}
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">Vie de la salle</p>
+        <h2>Ça se passe à T-GYM</h2>
+        <div class="grid-3">
+            {% for actu in actus_recentes %}
+            <div class="actu-preview-card">
+                {% if actu.image %}<img src="{{ actu.image.url }}" alt="{{ actu.titre }}" loading="lazy">{% endif %}
+                <div class="actu-preview-card__body">
+                    <p class="actu-preview-card__cat">{{ actu.get_categorie_display }}</p>
+                    <h3>{{ actu.titre }}</h3>
+                    <p>{{ actu.accroche }}</p>
+                    <a href="{% url 'actualites:actualite_detail' actu.slug %}" class="btn btn-outline">Lire</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <br>
+        <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">Toutes les actualités</a>
     </div>
 </section>
 {% endif %}
 
 {% if plan_populaire %}
-<section class="section section--grey">
+<div class="cable-divider cable-divider--ondark"></div>
+<section class="section section--dark">
     <div class="container">
         <p class="eyebrow">Formule la plus choisie</p>
-        <h2>{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
+        <h2 style="color:var(--white);">{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
         <a href="{% url 'core:tarifs' %}" class="btn btn-primary">Voir toutes les formules</a>
     </div>
 </section>
+<div class="cable-divider cable-divider--onlight"></div>
 {% endif %}
+
+<section class="section">
+    <div class="container cta-final">
+        <p class="eyebrow">Prêt(e) à commencer ?</p>
+        <h2>Le premier pas, c'est un message.</h2>
+        <p>Pas d'engagement à distance, pas de paiement en ligne — on discute d'abord, sur WhatsApp, comme entre voisins.</p>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Nous écrire sur WhatsApp</a>
+    </div>
+</section>
 
 {% endblock %}

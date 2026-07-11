@@ -1,4 +1,4 @@
-# T-GYM — Site Web (Phase 1 + 1.5)
+# T-GYM — Site Web (Phase 1 + 1.5 + 2)
 
 Projet Django, même stack que Akem FS (SQLite en dev, prêt pour Postgres/Render en prod).
 
@@ -19,22 +19,30 @@ Projet Django, même stack que Akem FS (SQLite en dev, prêt pour Postgres/Rende
 - Le programme marqué "phare" (`est_phare=True`) s'affiche automatiquement sur l'Accueil et La Méthode via le context processor global — aucune donnée en dur dans les templates
 - Lien WhatsApp contextualisé ("Bonjour, j'ai une question à propos de : le programme 45 jours pour maigrir")
 
+**Phase 2 — Actualités**
+- App `actualites` : modèle `Actualite` (titre, catégorie, accroche, corps, image optionnelle, `is_featured`, `est_publiee`)
+- Page liste `/actualites/` + fiche détail `/actualites/<slug>/`
+- Une actualité marquée `is_featured=True` alimente le bandeau **"Top Body News"** en haut du site — même mécanisme que l'Annonce et le Programme phare (context processor global, aucune donnée en dur)
+- Le bandeau "Top Body News" ne s'affiche que si aucune `Annonce` n'est active (l'Annonce reste prioritaire pour les infos ponctuelles type promo/horaire)
+- Lien "Actualités" ajouté à la navigation
+- Une actualité de démo est chargée par `seed_tgym`
+
 ## Apps
 
 - `core` : pages publiques, `SiteConfig`, `Annonce`, `whatsapp.py` (builder de liens)
 - `abonnements` : modèle `Plan` (grille tarifaire)
 - `coaching` : modèle `Programme` (programmes phares, extensible)
-- `actualites` : générée mais **volontairement vide** — réservée à la Phase 2
+- `actualites` : modèle `Actualite` (retention, bandeau "Top Body News")
 
 ## Démarrage rapide
 
 ```bash
 cd tgym_site
 python3 -m venv venv && source venv/bin/activate
-pip install django
+pip install -r requirements.txt
 
 python manage.py migrate
-python manage.py seed_tgym        # charge les vraies données (config, tarifs, programme phare, annonce démo)
+python manage.py seed_tgym        # charge les vraies données (config, tarifs, programme phare, annonce démo, actu démo)
 python manage.py createsuperuser  # ton compte admin
 
 python manage.py runserver
@@ -51,13 +59,16 @@ Tout se fait dans `/admin/` :
 - **Formules tarifaires** → prix, contenu inclus, mise en avant ("populaire")
 - **Programmes** → ajouter/modifier un programme, cocher "Programme phare" pour le mettre en avant sur l'accueil
 - **Annonces (bandeau)** → activer/désactiver le bandeau coulissant, programmer une date de fin
+- **Actualités** → publier/dépublier, cocher "Mise en avant" pour alimenter le bandeau "Top Body News"
 
 ## Prochaines étapes (pas encore construites)
 
-- Phase 2 : Actualités + bandeau "Top Body News" auto-alimenté (app `actualites`)
 - Phase 3 (nécessite WhatsApp Business Cloud API côté Meta) : comptes adhérents/coachs, relance automatique, diffusion d'actus en masse, chatbot Gemini
 
 ## Déploiement (à venir)
 
 Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'environnement pour `SECRET_KEY`/`DEBUG`/`ALLOWED_HOSTS`, Postgres en prod. Pas encore configuré — on le fera à l'étape déploiement.
+
+
+
 

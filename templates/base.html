@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/theme.css' %}">
 </head>
 <body>
@@ -19,6 +22,12 @@
             {% endif %}
         </div>
     </div>
+    {% elif actualite_phare %}
+    <div class="top-bar">
+        <div class="top-bar__track">
+            <a href="{% url 'actualites:actualite_detail' actualite_phare.slug %}">🔥 Top Body News — {{ actualite_phare.titre }}</a>
+        </div>
+    </div>
     {% endif %}
 
     <header class="header">
@@ -28,8 +37,14 @@
                 <a href="{% url 'core:accueil' %}">Accueil</a>
                 <a href="{% url 'core:methode' %}">La Méthode</a>
                 <a href="{% url 'coaching:programmes' %}">Programmes</a>
+                <a href="{% url 'actualites:actualites' %}">Actualités</a>
                 <a href="{% url 'core:tarifs' %}">Tarifs</a>
                 <a href="{% url 'core:ou_nous_trouver' %}">Où nous trouver</a>
+                {% if request.user.is_authenticated %}
+                    <a href="{% url 'comptes:mon_espace' %}">Mon espace</a>
+                {% else %}
+                    <a href="{% url 'comptes:connexion' %}">Connexion</a>
+                {% endif %}
                 <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
             </nav>
         </div>
@@ -48,6 +63,9 @@
                 {% if site_config.facebook_url %}
                     &nbsp;•&nbsp; <a href="{{ site_config.facebook_url }}" target="_blank" rel="noopener">Facebook</a>
                 {% endif %}
+                {% if site_config.instagram_url %}
+                    &nbsp;•&nbsp; <a href="{{ site_config.instagram_url }}" target="_blank" rel="noopener">Instagram</a>
+                {% endif %}
             </p>
             <p>{{ site_config.adresse_zone }}</p>
         </div>
@@ -55,5 +73,93 @@
 
     <a class="wa-float" href="{% block wa_float_link %}{{ contact_link|default:'#' }}{% endblock %}" target="_blank" rel="noopener" aria-label="Contacter T-GYM sur WhatsApp">💬</a>
 
+    <button type="button" class="chatbot-toggle" id="chatbot-toggle" aria-label="Ouvrir l'assistant T-GYM">🤖</button>
+    <div class="chatbot-panel" id="chatbot-panel">
+        <div class="chatbot-panel__header">
+            <strong>Assistant T-GYM</strong>
+            <button type="button" class="chatbot-panel__close" id="chatbot-close" aria-label="Fermer">✕</button>
+        </div>
+        <div class="chatbot-panel__messages" id="chatbot-messages">
+            <div class="chatbot-msg chatbot-msg--bot">Salut ! Une question sur nos formules, nos horaires ou le programme phare ? Je suis là 💪</div>
+        </div>
+        <form class="chatbot-panel__form" id="chatbot-form">
+            {% csrf_token %}
+            <input type="text" id="chatbot-input" placeholder="Écris ton message..." maxlength="500" autocomplete="off">
+            <button type="submit" id="chatbot-submit">Envoyer</button>
+        </form>
+    </div>
+
+    <script>
+    (function () {
+        const toggle = document.getElementById('chatbot-toggle');
+        const panel = document.getElementById('chatbot-panel');
+        const closeBtn = document.getElementById('chatbot-close');
+        const form = document.getElementById('chatbot-form');
+        const input = document.getElementById('chatbot-input');
+        const submitBtn = document.getElementById('chatbot-submit');
+        const messages = document.getElementById('chatbot-messages');
+
+        function ouvrir() {
+            panel.classList.add('chatbot-panel--open');
+            input.focus();
+        }
+        function fermer() {
+            panel.classList.remove('chatbot-panel--open');
+        }
+        toggle.addEventListener('click', function () {
+            panel.classList.contains('chatbot-panel--open') ? fermer() : ouvrir();
+        });
+        closeBtn.addEventListener('click', fermer);
+
+        function ajouterMessage(texte, role) {
+            const bulle = document.createElement('div');
+            bulle.className = 'chatbot-msg ' + (role === 'user' ? 'chatbot-msg--user' : 'chatbot-msg--bot');
+            bulle.textContent = texte;
+            messages.appendChild(bulle);
+            messages.scrollTop = messages.scrollHeight;
+            return bulle;
+        }
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const texte = input.value.trim();
+            if (!texte) return;
+
+            ajouterMessage(texte, 'user');
+            input.value = '';
+            input.disabled = true;
+            submitBtn.disabled = true;
+
+            const typing = ajouterMessage('...', 'bot');
+            typing.classList.add('chatbot-msg--typing');
+
+            try {
+                const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
+                const resp = await fetch("{% url 'core:chatbot_message' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({ message: texte }),
+                });
+                const data = await resp.json();
+                typing.remove();
+                ajouterMessage(data.reponse || "Désolé, une erreur est survenue.", 'bot');
+            } catch (err) {
+                typing.remove();
+                ajouterMessage("Connexion impossible. Réessaie dans un instant.", 'bot');
+            } finally {
+                input.disabled = false;
+                submitBtn.disabled = false;
+                input.focus();
+            }
+        });
+    })();
+    </script>
+
 </body>
 </html>
+
+
+

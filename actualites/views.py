@@ -1,3 +1,16 @@
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 
-# Create your views here.
+from .models import Actualite
+
+
+def actualites(request):
+    liste = Actualite.objects.filter(est_publiee=True)
+    return render(request, "actualites/actualites.html", {"actualites": liste})
+
+
+def actualite_detail(request, slug):
+    actualite = get_object_or_404(Actualite, slug=slug, est_publiee=True)
+    return render(request, "actualites/actualite_detail.html", {"actualite": actualite})
+
+
+
