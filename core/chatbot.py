@@ -96,17 +96,19 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
         return MESSAGE_REPLI
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            system_instruction=_instructions_systeme(),
-        )
-        contenu_historique = [
-            {"role": tour["role"], "parts": [tour["text"]]} for tour in historique
+        client = genai.Client(api_key=api_key)
+        historique_contenu = [
+            types.Content(role=tour["role"], parts=[types.Part.from_text(text=tour["text"])])
+            for tour in historique
         ]
-        chat = model.start_chat(history=contenu_historique)
+        chat = client.chats.create(
+            model="gemini-1.5-flash",
+            history=historique_contenu,
+            config=types.GenerateContentConfig(system_instruction=_instructions_systeme()),
+        )
         response = chat.send_message(message)
         texte = (response.text or "").strip()
         return texte or MESSAGE_REPLI

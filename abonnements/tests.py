@@ -83,24 +83,22 @@ class IaRelanceTests(TestCase):
         self.assertIn("Premium", message)
 
     @override_settings(GEMINI_API_KEY="fake-key")
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_avec_gemini_mocke_utilise_la_reponse_ia(self, mock_configure, mock_model_cls):
-        mock_instance = Mock()
-        mock_instance.generate_content.return_value = Mock(text="Salut Awa, pense à renouveler !")
-        mock_model_cls.return_value = mock_instance
+    @patch("google.genai.Client")
+    def test_avec_gemini_mocke_utilise_la_reponse_ia(self, mock_client_cls):
+        mock_client = Mock()
+        mock_client.models.generate_content.return_value = Mock(text="Salut Awa, pense à renouveler !")
+        mock_client_cls.return_value = mock_client
 
         message, genere_par_ia = generer_message_relance(self.abo)
         self.assertTrue(genere_par_ia)
         self.assertEqual(message, "Salut Awa, pense à renouveler !")
 
     @override_settings(GEMINI_API_KEY="fake-key")
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_erreur_gemini_bascule_sur_le_secours_sans_exception(self, mock_configure, mock_model_cls):
-        mock_instance = Mock()
-        mock_instance.generate_content.side_effect = RuntimeError("Gemini down")
-        mock_model_cls.return_value = mock_instance
+    @patch("google.genai.Client")
+    def test_erreur_gemini_bascule_sur_le_secours_sans_exception(self, mock_client_cls):
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = RuntimeError("Gemini down")
+        mock_client_cls.return_value = mock_client
 
         message, genere_par_ia = generer_message_relance(self.abo)
         self.assertFalse(genere_par_ia)

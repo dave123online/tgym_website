@@ -1,3 +1,120 @@
+=== ./GUIDE_FILL_MEDIAS.md ===
+# Guide — Remplir T-GYM en vidéos (et photos)
+
+Tout se fait depuis l'admin Django (`/admin/`), aucun code à toucher.
+
+---
+
+## 1. Vue d'ensemble : où va quoi
+
+| Type de vidéo | Champ `programme` | Champ `type_video` | Apparaît sur |
+|---|---|---|---|
+| Généraliste (ambiance, matériel, salle) | vide | *(peu importe, remis à "Généraliste" automatiquement)* | Mur vidéo de l'accueil **et** de `/tarifs/` |
+| Activité "45 jours pour maigrir" | 45 jours pour maigrir | Activité | Section programme phare de l'accueil (1ère en cadre portrait, les suivantes en rangée) |
+| Témoignage "45 jours pour maigrir" | 45 jours pour maigrir | Témoignage | Carrousel témoignages, section programme phare de l'accueil |
+
+Fond de page d'accueil : à part, un seul champ dédié (voir point 2A).
+
+---
+
+## 2. Étape par étape
+
+### A. La vidéo de fond de l'accueil (optionnel, une seule)
+1. `/admin/core/siteconfig/1/change/` → section **"Photo / vidéo d'accueil"**
+2. Upload dans `hero_video` (ou `hero_image` pour une photo)
+3. Si les deux sont renseignés, la vidéo prend le dessus.
+
+### B. Vidéos généralistes (mur, accueil + tarifs)
+1. `/admin/core/videosalle/add/`
+2. Upload dans `fichier`
+3. **Laisse `programme` vide** (le type se remet tout seul sur "Généraliste")
+4. `légende` optionnelle, `ordre_affichage` pour l'ordre (plus petit = en premier)
+
+### C. Vidéos "activité" du programme phare
+1. `/admin/core/videosalle/add/`
+2. Upload dans `fichier`
+3. `programme` → choisis le programme (ex: "45 jours pour maigrir")
+4. `type_video` → **Activité**
+5. La 1ère (par `ordre_affichage`) s'affiche en grand cadre portrait, les suivantes en rangée de vignettes en dessous
+
+### D. Vidéos "témoignage" du programme phare
+1. Même écran, mêmes étapes B/C, mais `type_video` → **Témoignage**
+2. Idéalement 4 à 7 vidéos : le carrousel les affiche toutes en vignettes, une lecture active à la fois, enchaînement automatique en boucle avec le son (bouton "Activer le son" au premier clic — c'est une contrainte navigateur, pas un bug)
+3. **Coupe uniquement les passages intéressants** avant l'upload (voir §5) — le carrousel n'a pas de fonction de découpage, il lit le fichier tel quel du début à la fin
+
+---
+
+## 3. Spécifications techniques recommandées
+
+| Emplacement | Format | Orientation | Durée | Poids |
+|---|---|---|---|---|
+| Hero (fond d'accueil) | MP4 (H.264) | Paysage (16:9) | 8–15s boucle | < 8 Mo |
+| Mur généraliste (accueil + tarifs) | MP4 (H.264) | Paysage ou portrait | 5–12s boucle | < 6 Mo/vidéo |
+| Activité (programme phare) | MP4 (H.264) | **Portrait (9:16)** de préférence | 8–20s | < 8 Mo |
+| Témoignage (carrousel) | MP4 (H.264) | **Portrait (9:16)** de préférence | 15–45s (le passage coupé) | < 10 Mo |
+
+- **Généraliste, activité** : pas besoin de son (lues en muet/boucle).
+- **Témoignage** : le son compte, coupe le passage pour que le début
+  tombe directement sur la phrase intéressante (pas de "euh, alors..."
+  avant).
+- Le cadrage s'adapte automatiquement (`object-fit: cover`) : une vidéo
+  paysage dans un cadre portrait sera recadrée (bords coupés), pas
+  déformée — mais le rendu est meilleur si tu filmes déjà dans le bon
+  format.
+- Poids = vitesse de chargement, vise systématiquement sous 8-10 Mo par
+  fichier (connexion Bénin).
+
+### Comprimer une vidéo avant upload (si tu as `ffmpeg`)
+
+```bash
+# Paysage, largeur 1080px
+ffmpeg -i original.mp4 -vf "scale=1080:-2" -an -c:v libx264 -crf 28 -preset veryfast web.mp4
+
+# Portrait, hauteur 1080px
+ffmpeg -i original.mp4 -vf "scale=-2:1080" -c:v libx264 -crf 26 -preset veryfast -c:a aac -b:a 96k portrait.mp4
+```
+
+Retire `-an` pour les témoignages (garde le son), garde-le pour
+généraliste/activité (pas besoin de son, fichier plus léger).
+
+### Découper un passage précis (témoignages)
+
+```bash
+# Extrait de 0:32 à 1:05 par exemple
+ffmpeg -i temoignage_brut.mp4 -ss 00:00:32 -to 00:01:05 -c copy temoignage_extrait.mp4
+```
+
+---
+
+## 4. Aperçu (poster)
+
+Chaque vidéo a un champ `apercu` (image), affiché le temps du
+chargement — évite l'écran noir/blanc. Recommandé mais pas obligatoire,
+un simple screenshot d'une bonne frame suffit. Particulièrement utile
+sur les vignettes témoignages (identifie visuellement qui parle avant
+de cliquer).
+
+---
+
+## 5. Ce qui se passe si une section est vide
+
+Toutes les sections média se masquent automatiquement s'il n'y a rien à
+afficher — pas de cadre vide ni d'erreur. Remplissage progressif possible,
+section par section, sans jamais rien casser.
+
+---
+
+## 6. Conseil de tri et quantités
+
+- **Généraliste** : 6 à 8 vidéos, varie les plans (matériel, ambiance,
+  coach, enseigne...) — plus que ça pèse sur le chargement en lecture
+  simultanée.
+- **Activité** : 3 à 5 (1 portrait principale + le reste en rangée).
+- **Témoignage** : 4 à 7. Coupe large au départ (garde 1-2 min par
+  personne), puis resserre sur la phrase/le passage qui vend vraiment le
+  programme — mieux vaut 20 secondes percutantes que 2 minutes diluées.
+- Upload 3-4 vidéos par catégorie pour commencer, regarde le rendu sur
+  le site, ajuste l'ordre (`ordre_affichage`), puis complète.
 === ./PROGRESS.md ===
 # T-GYM — Suivi d'avancement
 
@@ -173,6 +290,19 @@ Légende : ✅ fait & testé · 🔄 en cours · ⏳ pas commencé · 🔒 bloqu
 
 ---
 
+## Note de process — incident migrations (09/07/2026)
+Un livrable a régénéré tout `core/migrations/` depuis zéro (car
+reconstruit à partir d'un `codebase.txt` qui n'incluait pas les
+migrations), au lieu de partir du vrai historique git de David —
+conflit de branches à la clé (`0003_videosalle` vs
+`0005_siteconfig_instagram_url`), résolu avec `git checkout` sur le
+dossier migrations + suppression des fichiers en trop + régénération
+propre. **Règle depuis** : les livraisons contiennent le code
+(`models.py`, `views.py`, templates, CSS...) mais **jamais de fichier de
+migration tout fait** — c'est toujours David qui lance
+`makemigrations`/`migrate` contre sa vraie base, pour que Django calcule
+le diff contre son historique réel plutôt que contre une reconstruction.
+
 ## Petits points en attente (non bloquants)
 - Identifiants de test locaux (`admin` existant côté staff) à changer
   avant toute mise en ligne — **à faire par David lui-même**, pas encore fait
@@ -180,6 +310,178 @@ Légende : ✅ fait & testé · 🔄 en cours · ⏳ pas commencé · 🔒 bloqu
   si besoin un jour de remplacer le texte libre `prix_note` par une vraie
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
+
+## Dark mode + correction prix programme phare (09/07/2026)
+✅ **Fait et testé** — aucune nouvelle migration nécessaire (pas de
+nouveau champ de modèle)
+
+**Prix "45 jours pour maigrir"** : 35 000 FCFA (`prix_fcfa` renseigné
+dans `seed_tgym.py`, idempotent via `update_or_create` — relancer
+`python manage.py seed_tgym` met à jour le prix sans dupliquer, ou
+modifier directement dans `/admin/coaching/programme/`).
+
+**Dark mode** : interrupteur ☀️/🌙 dans la nav, persistant
+(`localStorage`), respecte `prefers-color-scheme` par défaut tant que
+l'utilisateur n'a pas cliqué. Script anti-flash dans le `<head>` pour
+éviter un clignotement clair→sombre au chargement.
+
+Approche : tokens sémantiques ajoutés dans `theme.css`
+(`--bg`, `--bg-alt`, `--card-bg`, `--text`, `--text-muted`,
+`--text-muted-2`, `--border`, `--border-strong`, `--danger`), distincts
+des couleurs de marque brutes (`--black`/`--yellow`/`--white`
+inchangées). Seules les surfaces "page normale" (fond de page, cartes,
+texte courant, mur d'actus, formulaires) suivent le thème — le header,
+le hero, le footer et les blocs `.section--dark` restent volontairement
+toujours sombres (déjà la marque T-GYM, pas de changement attendu ni
+souhaité là-dessus). Ajout au passage d'un style générique pour les
+champs de formulaire (`input`, `textarea`, `select`), qui n'avaient
+jusqu'ici aucun style custom et seraient restés blancs en dark mode
+(connexion, inscription adhérent, changement de mot de passe).
+
+Testé : suite complète 104/104 verts, CSS vérifié syntaxiquement
+(accolades équilibrées, aucun sélecteur cassé), toggle présent sur la
+page, prix confirmé en base après seed.
+
+## Fix — vignettes témoignages noires sans poster (09/07/2026)
+✅ **Fait et testé**
+Constat de David : les vignettes témoignages sans `apercu` uploadé
+s'affichaient en rectangle noir, aucune indication qu'elles sont
+cliquables/jouables. Corrigé :
+- **Icône ▶ toujours visible** sur chaque vignette non active
+  (`.temoignages-carrousel__play`), qu'il y ait un poster ou non
+- **Fallback sans poster** : si `apercu` n'est pas renseigné, une
+  balise `<video preload="metadata">` est utilisée à la place de
+  l'`<img>`, avec un `currentTime = 0.5` forcé au chargement des
+  métadonnées (nécessaire — certains navigateurs restent sur un cadre
+  noir tant qu'aucun `seek` explicite n'est fait, le simple `#t=0.5`
+  dans l'URL ne suffit pas partout)
+- Aucun impact sur les vignettes qui ONT un poster (comportement
+  identique à avant)
+Testé : suite complète 104/104 verts, rendu vérifié avec vignettes
+avec/sans poster.
+
+## Accueil enrichi — 09/07/2026 (v3 : activité / témoignages / formules)
+✅ **Fait et testé** — ⚠️ **migration NON incluse dans ce livrable**, à
+générer par David lui-même (`python manage.py makemigrations core` puis
+`migrate`) — leçon tirée de l'incident de migrations du 09/07/2026 (voir
+plus bas), on ne livre plus de fichier de migration tout fait.
+
+Contexte : David a en stock des vidéos généralistes + des vidéos
+"45 jours pour maigrir" de deux natures (activité, et témoignages
+d'adhérents coupés dans les passages intéressants). Répartition décidée
+avec lui :
+- **Généralistes** → mur vidéo, sur l'accueil **ET** `/tarifs/` (nouveau,
+  section "Un aperçu de l'intérieur" en bas de page, avant le CTA)
+- **Activité (45 jours)** → restent dans la section programme phare de
+  l'accueil : 1ère vidéo en cadre portrait (comme avant), les suivantes
+  en rangée de vignettes portrait défilable en dessous
+- **Témoignages (45 jours)** → nouveau **carrousel témoignages**, dans
+  la même section programme phare de l'accueil
+
+`VideoSalle` : ajout du champ `type_video` (généraliste / activité /
+témoignage), ignoré et remis automatiquement à "généraliste" en `save()`
+si aucun `programme` n'est renseigné (cohérence garantie même en cas
+d'erreur de saisie dans l'admin).
+
+**Carrousel témoignages** — comportement demandé par David : les
+vignettes des 5 (ou plus) témoignages sont visibles côte à côte, une
+seule vidéo est "active" à la fois (cadre principal, plus grand), elle
+se lit avec le son, et à la fin elle enchaîne automatiquement sur la
+suivante, en boucle continue sur l'ensemble. Détail technique important
+respecté : les navigateurs bloquent l'autoplay AVEC son sans geste
+utilisateur — le carrousel démarre donc en muet automatiquement, avec un
+bouton "🔇 Activer le son" visible ; une fois cliqué (geste utilisateur),
+les lectures suivantes déclenchées par `ended` (fin de vidéo) restent
+autorisées avec le son sur le même `<video>`. Un seul élément vidéo dans
+le DOM (pas 5) : la source est simplement remplacée à chaque avance,
+pour ne charger qu'une vidéo à la fois (cohérent avec le souci de
+bande passante déjà documenté dans `GUIDE_VIDEOS.md`).
+
+Testé : suite complète toujours à 104/104 verts après migration ; rendu
+structurel vérifié avec 3 vidéos activité + 5 témoignages + 4
+généralistes de démo (1 en cadre portrait + 2 en rangée activité, 5
+vignettes témoignages, mur généraliste identique sur accueil ET tarifs,
+zéro erreur serveur) — démo supprimée avant livraison.
+
+## Accueil enrichi — 09/07/2026 (v2 : direction vidéo-first)
+✅ **Fait et testé**
+
+Deuxième passe suite au constat de David : plus de vidéos que de photos
+disponibles côté salle. Direction créative changée en conséquence — voir
+`frontend-design` : signature = **motif "câble"** (`.cable-divider`,
+CSS pur, pas d'image), clin d'œil au fait que T-GYM est littéralement
+sous des lignes haute tension à Abomey-Calavi. Utilisé uniquement comme
+séparateur entre sections, jamais en décoration isolée. Typo : `Anton`
+(titres, registre affiche sportive condensée) + `Inter` (corps de texte)
+via Google Fonts, chargées côté navigateur du visiteur (pas d'impact sur
+l'environnement de dev).
+
+Trois traitements vidéo volontairement différents (pas de répétition du
+même bloc "vidéo en fond" partout) :
+- **Hero** — vidéo/photo plein cadre + overlay dégradé (déjà en place,
+  conservé)
+- **Mur "Dans nos murs"** (nouveau) — mosaïque asymétrique
+  (`.video-wall`, grille 6 colonnes, tailles de tuiles variées) mélangeant
+  vidéos généralistes ET photos de la galerie dans la même grille, vidéos
+  en premier (David a plus de vidéos que de photos). Lecture en
+  boucle/muette, aucun son requis. Masquée si aucun média.
+- **Programme phare** (nouveau) — vidéo unique en **cadre portrait**
+  (`.programme-phare__ecran`, ratio 9:16, coins arrondis façon écran de
+  téléphone) à côté de la fiche programme, sur fond clair — rupture de
+  rythme volontaire par rapport aux deux sections précédentes. Bascule
+  automatiquement sur une photo de la galerie si aucune vidéo n'est
+  encore liée au programme, section jamais cassée en attendant du contenu.
+
+Modèle `VideoSalle` (app `core`) : fichier vidéo, aperçu (poster)
+optionnel, légende, lien optionnel vers un `Programme` (si renseigné →
+vidéo "produit phare" au lieu de généraliste). Même philosophie que
+`PhotoSalle` : rien en dur, tout piloté depuis l'admin, sections
+masquées tant qu'aucun média n'est en ligne.
+
+Testé : suite complète toujours à 104/104 verts après migration
+(`core.0003_videosalle`) ; structure de page vérifiée avec vidéos/photos
+de démo générées localement (4 tuiles dans le mur, cadre portrait avec
+sa propre vidéo, 6 séparateurs câble générés, zéro erreur serveur) —
+démo supprimée avant livraison.
+
+**Action à faire par David** : trier ses vidéos en deux tas au moment de
+l'upload — celles à associer au champ `programme` d'un `Programme`
+(produit phare) vs celles à laisser sans `programme` (mur généraliste).
+Formats vertical et horizontal fonctionnent tous les deux dans le mur ;
+le cadre portrait du programme phare est pensé pour du vertical mais
+recadre en `object-fit: cover` si la vidéo est horizontale.
+
+## Accueil enrichi — 09/07/2026
+✅ **Fait et testé**
+- Page passée de 3 sections à 7 : méthode (existant) → **galerie
+  "L'ambiance T-GYM"** (nouveau) → programme phare (existant) →
+  **localisation/horaires en mini-cartes** (nouveau) → **aperçu des 3
+  dernières actualités** (nouveau, réutilise `Actualite` déjà existant,
+  jusque-là jamais montré sur l'accueil) → plan populaire (existant) →
+  **CTA final WhatsApp** (nouveau)
+- `SiteConfig` : ajout `hero_image` / `hero_video` (les deux optionnels,
+  vidéo prioritaire sur image si les deux sont renseignées) — le hero
+  passe d'un fond noir plat à une vraie photo/vidéo de la salle en fond,
+  avec overlay dégradé pour garder le texte lisible
+- Nouveau modèle `PhotoSalle` (app `core`) : galerie admin-pilotée
+  (image, légende optionnelle, actif, ordre d'affichage) — section
+  masquée automatiquement tant qu'aucune photo n'est en ligne, pas de
+  placeholder cassé avant que le staff n'ajoute du contenu
+- Aucune image de stock utilisée : tout est pensé pour être rempli avec
+  de VRAIES photos/vidéos de T-GYM par le staff depuis l'admin (upload
+  simple, pas de retouche requise côté code)
+- Renommé l'eyebrow de la section actus ("Top Body News" → "Vie de la
+  salle") pour ne pas entrer en collision avec le nom réservé du bandeau
+  du même nom (bug détecté par la suite de tests existante, corrigé
+  avant livraison)
+- Testé : suite complète toujours à 104/104 verts, structure de page
+  vérifiée (7 sections dans l'ordre), galerie testée avec des images de
+  démo générées localement (supprimées avant livraison — aucune vraie
+  photo T-GYM n'existe encore côté staff)
+- **Action à faire par David** : uploader de vraies photos/vidéos de la
+  salle dans l'admin (`SiteConfig` pour le hero, `Photos de la salle`
+  pour la galerie) — le site est prêt à les recevoir mais reste sans
+  section galerie tant que c'est vide
 
 ## Décisions prises
 - **08/07/2026 — `coaching` vs `abonnements`** : apps gardées séparées.
@@ -228,10 +530,8 @@ Bloquant avant tout déploiement public :
   Déploiement.
 
 Faible, backlog :
-- 🔲 Anti-brute-force sur `/connexion/` et `/admin/login/` (django-axes ou
-  throttling IP) — pas urgent vu l'entropie correcte des mots de passe
-  générés (~57 bits), mais aucune défense en profondeur actuellement pour
-  les comptes staff à mot de passe choisi à la main.
+- ✅ **Anti-brute-force sur `/connexion/` et `/admin/login/`** — fait le
+  09/07/2026, voir section "Audit sécurité" plus bas.
 - 🔲 Écart entre les tests décrits dans ce fichier (scénarios précis,
   "mocké", "405 sur GET"...) et la réalité : tous les `tests.py` étaient
   vides avant le 09/07/2026 (`Found 0 test(s)`). Corrigé — voir section
@@ -279,6 +579,121 @@ fur et à mesure qu'elles seront traitées.
   `settings.py` pour que `.env` soit réellement chargé en local (sans ça,
   un `.env.example` rempli n'aurait servi à rien). Voir `.env.example`
   à la racine pour la liste complète des variables reconnues.
+
+---
+
+## Audit sécurité — 09/07/2026
+
+Audit externe (`tgym_rapport_securite.txt`) reçu et vérifié empiriquement
+avant correction (codebase reconstruit localement, migrations générées,
+suite de tests + tests dynamiques dédiés). Tous les findings ont été
+confirmés dans le code réel **sauf le finding #7**, qui était faux (voir
+plus bas) — corrigé dans l'ordre de priorité du rapport.
+
+### Corrigé
+
+1. ✅ **CRITIQUE — SECRET_KEY / DEBUG / ALLOWED_HOSTS**
+   `tgym_site/settings.py` lit maintenant un interrupteur **explicite**
+   `IS_PRODUCTION` (`os.environ`, `False` par défaut) plutôt que de
+   déduire "on est en prod" depuis `ALLOWED_HOSTS` — plus fiable, aucune
+   ambiguïté possible. En local, `IS_PRODUCTION` n'est jamais posé :
+   `DEBUG` peut rester `True`, `SECRET_KEY`/`ALLOWED_HOSTS` peuvent rester
+   vides, rien ne bloque. Dès que `IS_PRODUCTION=True` (à poser sur
+   Render) : `SECRET_KEY` manquante ou `DEBUG` pas explicitement à
+   `False` → `ImproperlyConfigured` immédiat au démarrage, plutôt que de
+   tourner silencieusement avec la clé par défaut documentée dans ce
+   dépôt. Le durcissement cookies/HTTPS (`SESSION_COOKIE_SECURE` etc.)
+   est lui aussi piloté par `IS_PRODUCTION`, pas par `DEBUG` seul.
+   Testé : 5 scénarios (local pur / `IS_PRODUCTION=True` sans clé /
+   `IS_PRODUCTION=True` sans `DEBUG=False` / config prod complète /
+   `ALLOWED_HOSTS` seul sans `IS_PRODUCTION` — ce dernier ne bloque plus,
+   contrairement à l'ancienne heuristique). Suite complète : 100 tests
+   toujours verts après ce changement.
+2. ✅ **CRITIQUE — mot de passe admin par défaut → devenu non-bloquant pour
+   le déploiement**
+   Précision du 09/07/2026 : Render tournera sur **Postgres**, une base
+   neuve — la migration initiale n'y créera aucun superuser, `admin` avec
+   son mot de passe par défaut n'existe donc que dans le `db.sqlite3`
+   local. Le compte admin de prod sera créé via `python manage.py
+   createsuperuser` directement sur l'instance Render, avec un mot de
+   passe fort choisi à ce moment-là — pas de bascule d'un mot de passe
+   existant à changer. `admin/tgym2026` reste une gêne purement locale
+   (pas d'action requise avant déploiement) ; ⏳ **reste recommandé** de le
+   changer en local aussi (`python manage.py changepassword admin`) pour
+   ne pas développer avec un mot de passe connu, mais ce n'est plus un
+   point bloquant.
+3. ✅ **ÉLEVÉ — canal de timing sur l'authentification**
+   `comptes/backends.py` : `ModelBackend` retiré de
+   `AUTHENTICATION_BACKENDS` (il faisait doublon avec
+   `IdentifiantOuTelephoneBackend`, qui couvre déjà la recherche par
+   username). Un seul hash par tentative désormais, réel si l'utilisateur
+   existe, factice (`User().set_password(...)`) sinon — le temps de
+   réponse ne varie plus selon l'existence du compte. Testé : suite
+   fonctionnelle de connexion (username/téléphone/mauvais mot de passe)
+   toujours verte + nouveau test qui vérifie le déclenchement du hash
+   factice sur un identifiant inconnu.
+4. ✅ **MOYEN — garde-fou chatbot contournable**
+   `core/views.py` : throttle par IP ajouté (`django.core.cache`,
+   20 messages/IP/jour), indépendant du cookie de session — gère
+   `X-Forwarded-For` pour un déploiement derrière Render. Le compteur en
+   session existant est conservé pour l'UX ("tu as atteint ta limite")
+   mais n'est plus la seule protection. ⚠️ Cache par défaut = mémoire du
+   process (`LocMemCache`) : suffisant pour un seul worker, mais **à
+   passer sur un cache partagé (Redis/Memcached) si le déploiement tourne
+   plusieurs workers/dynos**, sinon la limite redevient contournable en
+   frappant des workers différents — à trancher à l'étape Déploiement.
+   Testé : script simulant un client sans cookies (nouvelle session à
+   chaque requête) → bloqué au 21e message ; deux IP différentes via
+   `X-Forwarded-For` → compteurs bien indépendants.
+5. ✅ **MOYEN — durcissement cookies/HTTPS**
+   Bloc `if not DEBUG:` ajouté dans `settings.py` :
+   `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT`,
+   `SECURE_HSTS_SECONDS` (+ subdomains/preload), `SECURE_PROXY_SSL_HEADER`
+   (nécessaire derrière le proxy TLS de Render), `CSRF_TRUSTED_ORIGINS`
+   généré depuis `ALLOWED_HOSTS`. Jamais actif en local (`DEBUG=True`).
+   Testé : valeurs correctement activées en simulant une config prod.
+
+### Backlog (non bloquant, noté par le rapport comme "peut attendre")
+
+- ✅ Anti-brute-force sur `/connexion/` et `/admin/login/` — fait le
+  09/07/2026 (voir ci-dessous, plus dans le backlog).
+
+### 6. Anti-brute-force — fait le 09/07/2026
+
+`comptes/middleware.py::AntiBruteForceMiddleware`, sans dépendance externe
+(pas de `django-axes`) — même approche cache Django que le throttle IP du
+chatbot. Verrouille une IP après **10 tentatives échouées en 15 minutes**
+sur `/connexion/` OU `/admin/login/` (compteur partagé entre les deux —
+frapper l'un ou l'autre compte pareil), réponse `429` tant que verrouillé.
+Un login réussi réinitialise le compteur (pas de blocage après une simple
+faute de frappe suivie du bon mot de passe). Volontairement par IP seule
+(pas IP+identifiant) : cohérent avec le reste du projet, un attaquant ne
+peut pas contourner en changeant juste de nom d'utilisateur.
+⚠️ Même limite que le throttle chatbot : cache par défaut = mémoire du
+process (`LocMemCache`), à passer sur un cache partagé si plusieurs
+workers en prod (même chantier que le point 4 ci-dessus, à trancher à
+l'étape Déploiement).
+Testé : 4 nouveaux tests (verrouillage après le seuil, verrouillage
+partagé connexion/admin, réinitialisation après succès, verrouillage
+indépendant du nom d'utilisateur tenté) + suite complète : **104 tests,
+tous verts**.
+
+### ⚠️ Correction du rapport lui-même — finding #7 inexact
+
+Le rapport affirme que les 4 `tests.py` du projet sont des stubs vides
+(`# Create your tests here.`) et que `python manage.py test` renvoie
+"Found 0 test(s)". **Faux** dans le codebase réel : les 4 fichiers
+totalisent 757 lignes et 96 tests déjà écrits (dont les scénarios
+sécurité que le rapport dit absents : GEMINI mocké, limite de 20
+messages/jour, refus 405 sur GET, tests fonctionnels du backend
+d'authentification). `python manage.py test` → **100 tests, tous verts**
+après les 6 nouveaux tests ajoutés pour les correctifs de cette session
+(2 sur le throttle IP, 2 sur le backend d'auth). Le rapport semble avoir
+été généré sur une version différente/antérieure du code que celle
+fournie dans `codebase.txt` — signalé pour que David en tienne compte
+pour la suite (les autres findings, eux, ont tous été confirmés
+empiriquement sur le code réel).
+
 
 
 
@@ -357,7 +772,343 @@ Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'env
 
 
 
+
+=== ./WA_ID_PROCESS.md ===
+# Guide complet — Obtenir les identifiants WhatsApp Business API (Meta)
+
+Ce guide te donne les **3 identifiants** dont T-GYM a besoin + le **template approuvé** indispensable pour envoyer des relances automatiques.
+
+---
+
+## 🎯 Ce qu'on va obtenir
+
+À la fin de ce guide, tu auras :
+
+| Identifiant | Utilisé dans T-GYM | Où le trouver |
+|---|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | `abonnements/whatsapp_api.py` | Meta Developer Portal |
+| `WHATSAPP_PHONE_NUMBER_ID` | idem | Meta Developer Portal |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | idem | Meta Developer Portal |
+| Template `relance_abonnement` approuvé | `WHATSAPP_TEMPLATE_RELANCE` | Meta Business Manager |
+
+---
+
+## ⚠️ Avertissements importants AVANT de commencer
+
+1. **Le numéro WhatsApp utilisé sur l'API ne peut plus être utilisé dans l'app WhatsApp classique.** Tu dois choisir : soit tu gardes ton numéro actuel pour l'app manuelle, soit tu le migres vers l'API (irréversible). **Solution recommandée** : acheter un **nouveau numéro** dédié à l'API (carte SIM prépayée MTN/Moov à 500 FCFA).
+
+2. **Le token temporaire expire en 24h.** On va directement créer un **token permanent** via un System User — sinon tu devras le régénérer tous les jours.
+
+3. **Les templates doivent être approuvés par Meta** (délai : 5 min à 24h, généralement < 15 min). Sans template approuvé, aucun envoi automatique ne marche.
+
+4. **En mode développement**, tu ne peux envoyer des messages qu'à **5 numéros de test maximum** (les tiens + 4 autres). Pour envoyer à tous les adhérents, il faut passer en mode Live (vérification business requise).
+
+---
+
+## 📋 Étape 1 — Prérequis
+
+Avant de toucher à Meta, assure-toi d'avoir :
+
+- [ ] Un **compte Facebook personnel** (obligatoire pour créer un Business Manager)
+- [ ] Un **numéro de téléphone dédié** à l'API (pas celui que tu utilises déjà sur WhatsApp perso/business)
+- [ ] Ce numéro doit pouvoir **recevoir un SMS ou un appel** (pour la vérification)
+- [ ] (Optionnel mais recommandé) Un **registre de commerce** ou document officiel de T-GYM — requis pour passer en mode Live
+
+---
+
+## 🏢 Étape 2 — Créer le compte Meta Business
+
+> Si tu as déjà un compte Meta Business pour T-GYM (ex: pour gérer la page Facebook), **saute cette étape** et utilise le compte existant.
+
+1. Va sur **[business.facebook.com/overview](https://business.facebook.com/overview)**
+2. Clique sur **"Créer un compte"**
+3. Remplis :
+   - **Nom du compte** : `T-GYM`
+   - **Ton nom** : ton nom complet
+   - **Email professionnel** : ton email (pas un Gmail perso si possible — proscréable mais moins bien vu)
+4. Clique sur **"Soumettre"** → confirme par email
+5. Tu arrives sur le **Business Manager** (tableau de bord)
+
+---
+
+## 🛠️ Étape 3 — Créer l'app Meta Developer
+
+1. Va sur **[developers.facebook.com](https://developers.facebook.com)**
+2. Connecte-toi avec le **même compte Facebook** que le Business Manager
+3. En haut à droite, clique sur **"My Apps"** → **"Create App"**
+4. Choisis le type d'app : **"Business"** (pas "Consumer", pas "Game")
+5. Remplis :
+   - **App name** : `T-GYM WhatsApp`
+   - **App contact email** : ton email
+   - **Business Account** : sélectionne `T-GYM` (le Business Manager créé à l'étape 2)
+6. Clique sur **"Create App"**
+7. Tu arrives sur le dashboard de l'app
+
+---
+
+## 💬 Étape 4 — Configurer WhatsApp dans l'app
+
+1. Sur le dashboard de l'app, dans le menu de gauche, cherche **"Add products to your app"** (ou "Ajouter des produits")
+2. Trouve **"WhatsApp"** → clique sur **"Set up"** (Configurer)
+3. Tu arrives sur la page WhatsApp de l'app
+
+### 4.1 — Ajouter un numéro de téléphone
+
+1. Dans la section **"To start using this API, add a phone number"**, clique sur **"Add phone number"**
+2. Une modale s'ouvre :
+   - **Phone number** : choisis **"I have a number"** (j'ai un numéro)
+   - Entre le numéro dédié (avec indicatif pays, ex: `+229 9X XX XX XX`)
+   - **Display name** : `T-GYM` (ce que les clients verront)
+   - **Timezone** : `Africa/Porto-Novo`
+   - **Business** : sélectionne `T-GYM`
+3. Clique sur **"Next"**
+4. Meta te demande de **vérifier le numéro** :
+   - Choisis **"SMS"** ou **"Voice call"**
+   - Entre le code reçu
+5. ✅ Le numéro est ajouté
+
+### 4.2 — Récupérer les 3 identifiants
+
+Sur la même page WhatsApp, tu vois maintenant une section **"API Setup"** avec :
+
+| Champ | Où le trouver | À copier dans T-GYM |
+|---|---|---|
+| **Temporary access token** | En haut de la page | ⚠️ **NE PAS UTILISER** — on va créer un token permanent |
+| **Phone number ID** | Section "API Setup" → champ "Phone number ID" | `WHATSAPP_PHONE_NUMBER_ID` |
+| **WhatsApp Business Account ID** | Section "API Setup" → champ "WhatsApp Business Account ID" | `WHATSAPP_BUSINESS_ACCOUNT_ID` |
+
+**Copie ces 2 IDs maintenant** (le token, on y revient).
+
+---
+
+## 🔐 Étape 5 — Créer un token permanent (System User)
+
+> Le token temporaire expire en 24h. Il faut un token permanent.
+
+### 5.1 — Créer un System User
+
+1. Va sur **[business.facebook.com/settings](https://business.facebook.com/settings)**
+2. Menu de gauche : **"Users"** → **"System Users"**
+3. Clique sur **"Add"** (Ajouter)
+4. Remplis :
+   - **Name** : `tgym-whatsapp-api`
+   - **Role** : **"Employee"** (pas Admin — Employee suffit et c'est plus sûr)
+5. Clique sur **"Create System User"**
+
+### 5.2 — Assigner l'app au System User
+
+1. Sur la page du System User, section **"Assigned assets"** → onglet **"Apps"**
+2. Clique sur **"Add Apps"**
+3. Sélectionne `T-GYM WhatsApp` (l'app créée à l'étape 3)
+4. Coche la case **"Manage app"** (gérer l'app)
+5. Clique sur **"Save changes"**
+
+### 5.3 — Générer le token permanent
+
+1. Toujours sur la page du System User, section **"Generated token"**
+2. Clique sur **"Generate new password"** (oui, Meta appelle ça "password" mais c'est bien un token)
+3. Une modale s'ouvre :
+   - **App** : sélectionne `T-GYM WhatsApp`
+   - **Permissions** : clique sur **"Select permissions"** et coche :
+     - `whatsapp_business_messaging`
+     - `whatsapp_business_management`
+   - Clique sur **"Generate token"**
+4. **Copie immédiatement le token** — il ne sera plus affichable après fermeture de la modale
+5. C'est ton `WHATSAPP_ACCESS_TOKEN`
+
+> 💡 Astuce : colle-le dans un fichier `.env` local tout de suite, ne le laisse pas dans le presse-papier.
+
+---
+
+## 📝 Étape 6 — Créer le template `relance_abonnement`
+
+> Sans template approuvé, l'envoi auto ne marchera pas. C'est l'étape la plus critique.
+
+### 6.1 — Accéder au gestionnaire de templates
+
+1. Va sur **[business.facebook.com](https://business.facebook.com)**
+2. Menu de gauche : **"Account tools"** → **"Message templates"** (ou "Modèles de message")
+3. Clique sur **"Create template"**
+
+### 6.2 — Créer le template de relance
+
+1. **Template name** : `relance_abonnement` (doit correspondre exactement à `WHATSAPP_TEMPLATE_RELANCE` dans T-GYM)
+2. **Category** : **"Marketing"** (ou "Utility" — les deux marchent, mais "Utility" est moins cher en coût Meta)
+3. **Language** : `French (fr)`
+4. Clique sur **"Continue"**
+
+### 6.3 — Composer le message
+
+Dans l'éditeur de template :
+
+**Body (corps du message)** :
+
+```
+Bonjour {{1}},
+
+Ton abonnement « {{2}} » à T-GYM arrive à expiration le {{3}}.
+
+Pour garder ta lancée et continuer à profiter de la salle, passe nous voir ou réponds à ce message pour renouveler.
+
+À très vite,
+L'équipe T-GYM 💪
+```
+
+Les `{{1}}`, `{{2}}`, `{{3}}` sont les **variables** qui seront remplacées dynamiquement par T-GYM :
+- `{{1}}` → prénom de l'adhérent
+- `{{2}}` → nom de la formule (ex: "Premium")
+- `{{3}}` → date d'expiration (ex: "15/07/2026")
+
+> ⚠️ **Important** : l'ordre des variables dans le template doit correspondre à l'ordre dans lequel T-GYM les envoie. Dans `abonnements/whatsapp_api.py`, c'est :
+> ```python
+> {"type": "text", "text": prenom},       # {{1}}
+> {"type": "text", "text": plan_nom},     # {{2}}
+> {"type": "text", "text": date_fin},     # {{3}}
+> ```
+> ✅ Ça correspond bien.
+
+### 6.4 — Soumettre pour approbation
+
+1. Clique sur **"Submit"** (Soumettre)
+2. Meta examine le template (5 min à 24h, généralement < 15 min)
+3. Tu recevras une notification quand il sera approuvé
+
+> 💡 Si Meta rejette le template, ils donnent une raison (ex: "trop promotionnel", "contenu non clair"). Corrige et resoumets.
+
+---
+
+## 🚀 Étape 7 — Passer en mode Live (production)
+
+> En mode dev, tu ne peux envoyer qu'à 5 numéros. Pour envoyer à tous les adhérents, il faut passer en Live.
+
+1. Retourne sur **[developers.facebook.com](https://developers.facebook.com)** → ton app `T-GYM WhatsApp`
+2. En haut à droite, tu vois un switch **"Development mode"** → clique dessus
+3. Meta te demande de **vérifier ton business** :
+   - **Legal business name** : `T-GYM`
+   - **Business address** : adresse de la salle
+   - **Phone number** : numéro de la salle
+   - **Documents** : registre de commerce, facture d'eau/électricité, ou document officiel
+4. Soumets → vérification sous 24-48h (parfois plus)
+5. Une fois validé, bascule le switch en **"Live"**
+
+> ⚠️ **Coût** : à partir de ce moment, chaque conversation est facturée par Meta (voir résumé plus bas).
+
+---
+
+## 🔧 Étape 8 — Renseigner les variables dans T-GYM
+
+Crée un fichier `.env` à la racine du projet (même niveau que `manage.py`) :
+
+```bash
+# WhatsApp Business Cloud API (Meta)
+WHATSAPP_ACCESS_TOKEN=EAAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+WHATSAPP_PHONE_NUMBER_ID=123456789012345
+WHATSAPP_BUSINESS_ACCOUNT_ID=987654321098765
+WHATSAPP_TEMPLATE_RELANCE=relance_abonnement
+WHATSAPP_TEMPLATE_LANGUE=fr
+
+# Gemini (optionnel, pour les messages IA)
+GEMINI_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Puis modifie `tgym_site/settings.py` pour charger le `.env` :
+
+```python
+# En haut du fichier
+import os
+from pathlib import Path
+
+# Charger le .env manuellement (simple, pas de dépendance)
+env_file = Path(__file__).resolve().parent.parent / ".env"
+if env_file.exists():
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
+
+# Plus bas, les variables existent déjà :
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+# ...
+```
+
+> ⚠️ **Sécurité** : ajoute `.env` dans ton `.gitignore` pour ne jamais le committer.
+
+---
+
+## 🧪 Étape 9 — Tester
+
+### 9.1 — Tester l'envoi d'un message
+
+1. Dans l'admin Django, va sur un adhérent qui a un abonnement qui expire bientôt
+2. Lance la commande :
+   ```bash
+   python manage.py generer_relances --jours 30
+   ```
+3. Puis :
+   ```bash
+   python manage.py envoyer_relances_whatsapp
+   ```
+4. Le téléphone de l'adhérent devrait recevoir le message
+
+> ⚠️ **En mode dev**, l'adhérent doit être dans la liste des **5 numéros de test** (configurables dans la page WhatsApp de l'app Meta).
+
+### 9.2 — Vérifier les logs
+
+Si ça ne marche pas, regarde les logs Django :
+```bash
+python manage.py envoyer_relances_whatsapp 2>&1 | tee envoi.log
+```
+
+Les erreurs courantes :
+- `HTTP 400` → template inconnu ou non approuvé
+- `HTTP 403` → token invalide ou expiré
+- `HTTP 131039` → numéro de destination pas dans la liste de test (mode dev)
+
+---
+
+## 💰 Rappel des coûts (par conversation de 24h)
+
+| Type | Coût | Exemple |
+|---|---|---|
+| **Utility** (relance, rappel) | ~0.035 USD (~22 FCFA) | Ton template `relance_abonnement` en "Utility" |
+| **Marketing** (promo, actu) | ~0.08 USD (~50 FCFA) | Si tu fais un template "promo Noel" |
+| **Service** (réponse à un client) | ~0.008 USD (~5 FCFA) | Si le client t'écrit en premier |
+
+> 💡 **Conseil** : crée ton template `relance_abonnement` en catégorie **"Utility"** plutôt que "Marketing" — c'est 2× moins cher.
+
+---
+
+## ✅ Checklist finale
+
+- [ ] Compte Meta Business créé
+- [ ] App Meta Developer créée (type "Business")
+- [ ] WhatsApp ajouté à l'app
+- [ ] Numéro dédié ajouté et vérifié
+- [ ] `WHATSAPP_PHONE_NUMBER_ID` copié
+- [ ] `WHATSAPP_BUSINESS_ACCOUNT_ID` copié
+- [ ] System User créé
+- [ ] Token permanent généré avec permissions `whatsapp_business_messaging` + `whatsapp_business_management`
+- [ ] `WHATSAPP_ACCESS_TOKEN` copié
+- [ ] Template `relance_abonnement` créé et **approuvé** (catégorie Utility)
+- [ ] Fichier `.env` créé à la racine
+- [ ] `.env` ajouté au `.gitignore`
+- [ ] Test d'envoi réussi en mode dev (5 numéros de test)
+- [ ] Business vérifié par Meta (pour passer en Live)
+
+---
+
+## 🆘 En cas de blocage
+
+Les interfaces Meta changent souvent. Si un bouton a changé de place :
+- Cherche dans la doc officielle : [developers.facebook.com/docs/whatsapp/cloud-api](https://developers.facebook.com/docs/whatsapp/cloud-api)
+- Ou dis-moi où tu es bloqué, je te guide en direct
+
+---
+
+Une fois tout ça fait, T-GYM pourra envoyer des relances automatiques à tous les adhérents dont l'abonnement expire. Tu veux qu'on passe à la suite (chatbot Gemini sur le site, ou déploiement Render) ?
 === ./abonnements/__init__.py ===
+
 
 
 === ./abonnements/admin.py ===
@@ -429,12 +1180,14 @@ class RelanceMessageAdmin(admin.ModelAdmin):
 
 
 
+
 === ./abonnements/apps.py ===
 from django.apps import AppConfig
 
 
 class AbonnementsConfig(AppConfig):
     name = 'abonnements'
+
 
 
 
@@ -526,10 +1279,13 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
         return _message_secours(abonnement), False
 
 
+
 === ./abonnements/management/__init__.py ===
 
 
+
 === ./abonnements/management/commands/__init__.py ===
+
 
 
 === ./abonnements/management/commands/envoyer_relances_whatsapp.py ===
@@ -581,6 +1337,7 @@ class Command(BaseCommand):
             f"{envoyes} message(s) envoyé(s) automatiquement, "
             f"{laisses_en_attente} laissé(s) pour envoi manuel."
         ))
+
 
 
 === ./abonnements/management/commands/generer_relances.py ===
@@ -645,6 +1402,7 @@ class Command(BaseCommand):
             f"{crees} message(s) de relance créé(s), {ignores} déjà existant(s) ignoré(s) "
             f"(fenêtre : abonnements expirant d'ici {jours} jour(s))."
         ))
+
 
 
 === ./abonnements/models.py ===
@@ -821,6 +1579,7 @@ class RelanceMessage(models.Model):
         verbose_name = "Message de relance"
         verbose_name_plural = "Messages de relance"
         ordering = ["-date_generation"]
+
 
 
 
@@ -1049,10 +1808,12 @@ class EnvoyerRelancesWhatsappCommandTests(TestCase):
         self.assertTrue(self.relance.envoye_automatiquement)
         self.assertIsNotNone(self.relance.envoye_le)
 
+
 === ./abonnements/views.py ===
 from django.shortcuts import render
 
 # Create your views here.
+
 
 
 
@@ -1175,7 +1936,9 @@ def envoyer_template_relance(abonnement) -> dict:
     return response.json()
 
 
+
 === ./actualites/__init__.py ===
+
 
 
 === ./actualites/admin.py ===
@@ -1200,12 +1963,14 @@ class ActualiteAdmin(admin.ModelAdmin):
 
 
 
+
 === ./actualites/apps.py ===
 from django.apps import AppConfig
 
 
 class ActualitesConfig(AppConfig):
     name = 'actualites'
+
 
 
 
@@ -1267,6 +2032,7 @@ class Actualite(models.Model):
 
 
 
+
 === ./actualites/templates/actualites/actualite_detail.html ===
 {% extends "base.html" %}
 
@@ -1294,6 +2060,7 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -1330,6 +2097,7 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -1385,6 +2153,7 @@ class ActualitesViewsTests(TestCase):
         resp = self.client.get(reverse("actualites:actualite_detail", args=["inexistant"]))
         self.assertEqual(resp.status_code, 404)
 
+
 === ./actualites/urls.py ===
 from django.urls import path
 
@@ -1396,6 +2165,7 @@ urlpatterns = [
     path("actualites/", views.actualites, name="actualites"),
     path("actualites/<slug:slug>/", views.actualite_detail, name="actualite_detail"),
 ]
+
 
 
 
@@ -1416,7 +2186,9 @@ def actualite_detail(request, slug):
 
 
 
+
 === ./coaching/__init__.py ===
+
 
 
 === ./coaching/admin.py ===
@@ -1441,12 +2213,14 @@ class ProgrammeAdmin(admin.ModelAdmin):
 
 
 
+
 === ./coaching/apps.py ===
 from django.apps import AppConfig
 
 
 class CoachingConfig(AppConfig):
     name = 'coaching'
+
 
 
 
@@ -1500,6 +2274,7 @@ class Programme(models.Model):
         verbose_name = "Programme"
         verbose_name_plural = "Programmes"
         ordering = ["ordre_affichage", "titre"]
+
 
 
 
@@ -1564,6 +2339,7 @@ class Programme(models.Model):
 
 
 
+
 === ./coaching/templates/coaching/programmes.html ===
 {% extends "base.html" %}
 
@@ -1596,6 +2372,7 @@ class Programme(models.Model):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -1669,6 +2446,7 @@ class ProgrammesViewsTests(TestCase):
         )
         self.assertContains(resp, "wa.me")
 
+
 === ./coaching/urls.py ===
 from django.urls import path
 
@@ -1680,6 +2458,7 @@ urlpatterns = [
     path("programmes/", views.programmes, name="programmes"),
     path("programmes/<slug:slug>/", views.programme_detail, name="programme_detail"),
 ]
+
 
 
 
@@ -1707,7 +2486,9 @@ def programme_detail(request, slug):
 
 
 
+
 === ./comptes/__init__.py ===
+
 
 
 === ./comptes/admin.py ===
@@ -1768,6 +2549,7 @@ class ProfilAdmin(admin.ModelAdmin):
 
 
 
+
 === ./comptes/apps.py ===
 from django.apps import AppConfig
 
@@ -1782,6 +2564,7 @@ class ComptesConfig(AppConfig):
 
 
 
+
 === ./comptes/backends.py ===
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import User
@@ -1791,37 +2574,55 @@ from .utils import normaliser_telephone
 
 class IdentifiantOuTelephoneBackend(ModelBackend):
     """
+    Backend d'authentification UNIQUE du site (voir AUTHENTICATION_BACKENDS
+    dans settings.py — ModelBackend n'y figure plus).
+
+    Avant l'audit du 09/07/2026, ce backend s'ajoutait à ModelBackend au
+    lieu de le remplacer : les deux tournaient à chaque tentative, donc un
+    identifiant existant déclenchait deux hash de mot de passe (un par
+    backend) contre un seul pour un identifiant inexistant — un écart de
+    timing mesurable à distance permettant d'énumérer les comptes. Ce
+    backend fait maintenant systématiquement UN SEUL hash par tentative,
+    que l'identifiant existe ou non (réel si trouvé, factice sinon), pour
+    que le temps de réponse ne varie plus selon l'existence du compte.
+
     Permet la connexion via l'identifiant habituel OU via le numéro de
-    téléphone du Profil, avec ou sans préfixe (00229/+229/229) — l'utilisateur
-    peut taper son numéro tel quel, dans n'importe quel format.
+    téléphone du Profil, avec ou sans préfixe (00229/+229/229).
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        if username is None:
+        if username is None or password is None:
             return None
 
-        user = None
-        try:
-            user = User.objects.get(username__iexact=username)
-        except User.DoesNotExist:
-            numero = normaliser_telephone(username)
-            if numero:
-                # On compare aussi le téléphone stocké après normalisation,
-                # au cas où d'anciens comptes auraient été enregistrés avec
-                # un préfixe encore présent.
-                for profil in User.objects.filter(
-                    profil__telephone__endswith=numero
-                ).select_related("profil"):
-                    if normaliser_telephone(profil.profil.telephone) == numero:
-                        user = profil
-                        break
+        user = self._trouver_utilisateur(username)
 
-        if user is not None and self.user_can_authenticate(user):
-            if user.check_password(password):
-                return user
+        if user is None:
+            # Hash factice à temps constant (même coût qu'un check_password
+            # réel) : empêche de distinguer "identifiant inconnu" de
+            # "mauvais mot de passe" par mesure du temps de réponse.
+            User().set_password(password)
+            return None
+
+        if user.check_password(password) and self.user_can_authenticate(user):
+            return user
         return None
 
+    def _trouver_utilisateur(self, identifiant):
+        try:
+            return User.objects.get(username__iexact=identifiant)
+        except User.DoesNotExist:
+            pass
 
+        numero = normaliser_telephone(identifiant)
+        if not numero:
+            return None
+
+        for profil in User.objects.filter(
+            profil__telephone__endswith=numero
+        ).select_related("profil"):
+            if normaliser_telephone(profil.profil.telephone) == numero:
+                return profil
+        return None
 
 === ./comptes/decorators.py ===
 """
@@ -1852,6 +2653,7 @@ def role_required(*roles):
             return vue(request, *args, **kwargs)
         return wrapper
     return decorateur
+
 
 
 
@@ -1928,11 +2730,103 @@ class CreationCompteAdherentForm(forms.Form):
 
 
 
+
 === ./comptes/management/__init__.py ===
+
 
 
 === ./comptes/management/commands/__init__.py ===
 
+
+
+=== ./comptes/middleware.py ===
+"""
+Middleware anti-brute-force par IP, sur les points d'entrée d'authentification
+du site (/connexion/ et /admin/login/). Voir audit sécurité 09/07/2026,
+finding #6 (backlog "faible", traité ici sans dépendance externe type
+django-axes — même approche cache Django que le throttle du chatbot dans
+core/views.py).
+
+Principe : compteur d'échecs en cache, par IP, avec verrouillage temporaire
+au-delà du seuil. Volontairement simple (par IP seule, pas IP+identifiant) :
+cohérent avec le reste du projet, suffisant vu l'entropie des mots de passe
+générés (~57 bits, voir PROGRESS.md), pas pensé pour arrêter un botnet
+distribué (aucune solution par IP ne le fait de toute façon).
+
+Détection succès/échec : les deux vues concernées (comptes.views.ConnexionView
+et l'admin Django) redirigent (302) sur connexion réussie et réaffichent le
+formulaire (200) sur échec — heuristique fiable sans avoir à modifier les
+vues elles-mêmes.
+"""
+from datetime import date
+
+from django.core.cache import cache
+from django.http import HttpResponse
+from django.urls import reverse
+
+SEUIL_TENTATIVES = 10
+FENETRE_SECONDES = 15 * 60  # 15 minutes
+
+
+def _adresse_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "inconnue")
+
+
+class AntiBruteForceMiddleware:
+    """
+    À placer après AuthenticationMiddleware dans MIDDLEWARE (ordre sans
+    importance ici, ce middleware ne dépend pas de request.user).
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        # Résolus paresseusement (au 1er appel) : urls.py n'est pas encore
+        # chargé de façon fiable à l'import de ce module.
+        self._chemins = None
+
+    def _chemins_surveilles(self):
+        if self._chemins is None:
+            self._chemins = {reverse("comptes:connexion"), "/admin/login/"}
+        return self._chemins
+
+    def _cle(self, request):
+        return f"antibruteforce:{date.today().isoformat()}:{_adresse_ip(request)}"
+
+    def __call__(self, request):
+        surveille = (
+            request.method == "POST"
+            and request.path in self._chemins_surveilles()
+        )
+
+        if surveille:
+            cle = self._cle(request)
+            nombre = cache.get(cle, 0)
+            if nombre >= SEUIL_TENTATIVES:
+                return HttpResponse(
+                    "Trop de tentatives de connexion depuis cette adresse. "
+                    "Réessayez dans quelques minutes.",
+                    status=429,
+                    content_type="text/plain; charset=utf-8",
+                )
+
+        response = self.get_response(request)
+
+        if surveille:
+            cle = self._cle(request)
+            if response.status_code == 302:
+                # Connexion réussie : on efface le compteur pour cette IP.
+                cache.delete(cle)
+            else:
+                # Échec (formulaire réaffiché, généralement 200) : on
+                # incrémente. On répare aussi le compteur créé lors du GET
+                # initial de la page (aucun, on ne compte que les POST).
+                nombre = cache.get(cle, 0)
+                cache.set(cle, nombre + 1, timeout=FENETRE_SECONDES)
+
+        return response
 
 === ./comptes/models.py ===
 from django.contrib.auth.models import User
@@ -1985,6 +2879,7 @@ class Profil(models.Model):
 
 
 
+
 === ./comptes/signals.py ===
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -2005,6 +2900,7 @@ def creer_profil(sender, instance, created, **kwargs):
         return
     role = Profil.Role.STAFF if (instance.is_staff or instance.is_superuser) else Profil.Role.ADHERENT
     Profil.objects.get_or_create(user=instance, defaults={"role": role})
+
 
 
 
@@ -2046,6 +2942,7 @@ def creer_profil(sender, instance, created, **kwargs):
 
 
 
+
 === ./comptes/templates/comptes/changer_mot_de_passe_termine.html ===
 {% extends "base.html" %}
 
@@ -2063,6 +2960,7 @@ def creer_profil(sender, instance, created, **kwargs):
 
 
 
+
 === ./comptes/templates/comptes/connexion.html ===
 {% extends "base.html" %}
 
@@ -2074,7 +2972,7 @@ def creer_profil(sender, instance, created, **kwargs):
         <h2>Connexion</h2>
 
         {% if form.errors %}
-        <p style="color:#c0392b;">Identifiants incorrects. Réessayez.</p>
+        <p class="text-danger">Identifiants incorrects. Réessayez.</p>
         {% endif %}
 
         <form method="post" class="card">
@@ -2092,6 +2990,7 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -2151,6 +3050,7 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -2241,6 +3141,7 @@ def creer_profil(sender, instance, created, **kwargs):
 
 
 
+
 === ./comptes/tests.py ===
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -2294,6 +3195,8 @@ class NormaliserTelephoneTests(TestCase):
 
 class IdentifiantOuTelephoneBackendTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # évite la contamination par le compteur anti-bruteforce
         self.user = User.objects.create_user(username="awakoffi", password="MotDePasse123")
         self.user.profil.telephone = "94140535"
         self.user.profil.save(update_fields=["telephone"])
@@ -2327,6 +3230,38 @@ class IdentifiantOuTelephoneBackendTests(TestCase):
             "username": "awakoffi", "password": "MotDePasse123",
         })
         self.assertRedirects(resp, reverse("comptes:mon_espace"))
+
+    def test_un_seul_backend_actif(self):
+        # Audit sécurité 09/07/2026, finding #3 : ModelBackend ne doit plus
+        # être présent à côté de IdentifiantOuTelephoneBackend, sans quoi un
+        # identifiant existant déclenche deux hash (un par backend) contre
+        # un seul pour un identifiant inexistant — canal de timing exploitable
+        # à distance pour énumérer les comptes.
+        from django.conf import settings
+        self.assertEqual(
+            settings.AUTHENTICATION_BACKENDS,
+            ["comptes.backends.IdentifiantOuTelephoneBackend"],
+        )
+
+    def test_hash_factice_sur_identifiant_inconnu(self):
+        # Le correctif fait un vrai hash (réel ou factice) dans TOUS les cas
+        # pour égaliser le coût CPU. On ne peut pas fiabiliser un test sur un
+        # écart de millisecondes en CI, donc on vérifie le mécanisme : un
+        # hash factice est bien déclenché (User().set_password appelé) sur
+        # le chemin "utilisateur introuvable".
+        from unittest.mock import patch
+
+        from comptes.backends import IdentifiantOuTelephoneBackend
+
+        backend = IdentifiantOuTelephoneBackend()
+        with patch(
+            "comptes.backends.User.set_password", autospec=True
+        ) as mock_set_password:
+            resultat = backend.authenticate(
+                request=None, username="personne_ici", password="peu importe",
+            )
+        self.assertIsNone(resultat)
+        mock_set_password.assert_called_once()
 
 
 class RoleRequiredDecoratorTests(TestCase):
@@ -2437,6 +3372,77 @@ class MonEspaceViewTests(TestCase):
         resp = self.client.get(reverse("comptes:mon_espace"))
         self.assertIsNone(resp.context["abonnement_actif"])
 
+
+class AntiBruteForceMiddlewareTests(TestCase):
+    """
+    Audit sécurité 09/07/2026, finding #6 (backlog). Vérifie le
+    verrouillage par IP sur /connexion/ ET /admin/login/ après le seuil de
+    tentatives échouées — ainsi que le fait qu'un succès réinitialise le
+    compteur, pour ne jamais bloquer un utilisateur légitime après une
+    simple faute de frappe suivie du bon mot de passe.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="staffuser", password="BonMotDePasse123",
+            is_staff=True, is_superuser=True,
+        )
+
+    def _echec(self, chemin="/connexion/"):
+        return self.client.post(chemin, {"username": "staffuser", "password": "faux"})
+
+    def test_verrouillage_apres_le_seuil_sur_connexion(self):
+        from comptes.middleware import SEUIL_TENTATIVES
+
+        for _ in range(SEUIL_TENTATIVES):
+            resp = self._echec()
+            self.assertNotEqual(resp.status_code, 429)
+
+        resp = self._echec()
+        self.assertEqual(resp.status_code, 429)
+
+    def test_verrouillage_partage_entre_connexion_et_admin_login(self):
+        # Même IP -> même compteur, peu importe par quelle porte on frappe.
+        from comptes.middleware import SEUIL_TENTATIVES
+
+        for _ in range(SEUIL_TENTATIVES):
+            self._echec("/connexion/")
+
+        resp = self.client.post(
+            "/admin/login/", {"username": "staffuser", "password": "faux"}
+        )
+        self.assertEqual(resp.status_code, 429)
+
+    def test_une_connexion_reussie_reinitialise_le_compteur(self):
+        for _ in range(5):
+            self._echec()
+
+        resp_ok = self.client.post(
+            "/connexion/", {"username": "staffuser", "password": "BonMotDePasse123"}
+        )
+        self.assertEqual(resp_ok.status_code, 302)
+
+        # Après un succès, 5 nouveaux échecs ne doivent PAS suffire à
+        # eux seuls à déclencher le verrouillage (le compteur est reparti
+        # de zéro, pas resté à 5).
+        for _ in range(5):
+            resp = self._echec()
+            self.assertNotEqual(resp.status_code, 429)
+
+    def test_utilisateur_different_meme_ip_est_aussi_concerne(self):
+        # Le compteur est par IP, pas par identifiant ciblé : un attaquant
+        # ne peut pas contourner le verrouillage en changeant de username.
+        from comptes.middleware import SEUIL_TENTATIVES
+
+        for _ in range(SEUIL_TENTATIVES):
+            self.client.post("/connexion/", {"username": "nimporte_qui", "password": "faux"})
+
+        resp = self._echec()
+        self.assertEqual(resp.status_code, 429)
+
+
 === ./comptes/urls.py ===
 from django.urls import path
 
@@ -2452,6 +3458,7 @@ urlpatterns = [
     path("mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="changer_mot_de_passe"),
     path("mot-de-passe/termine/", views.ChangerMotDePasseTermineView.as_view(), name="changer_mot_de_passe_termine"),
 ]
+
 
 
 
@@ -2479,6 +3486,7 @@ def normaliser_telephone(valeur: str) -> str:
         if valeur.startswith(prefixe):
             return valeur[len(prefixe):]
     return valeur
+
 
 
 
@@ -2603,13 +3611,15 @@ class ChangerMotDePasseTermineView(LoginRequiredMixin, auth_views.PasswordChange
 
 
 
+
 === ./core/__init__.py ===
+
 
 
 === ./core/admin.py ===
 from django.contrib import admin
 
-from .models import Annonce, SiteConfig
+from .models import Annonce, PhotoSalle, SiteConfig, VideoSalle
 
 
 @admin.register(SiteConfig)
@@ -2620,6 +3630,10 @@ class SiteConfigAdmin(admin.ModelAdmin):
         ("Contacts WhatsApp", {"fields": ("whatsapp_numero_1", "whatsapp_numero_2")}),
             ("Réseaux sociaux", {"fields": ("facebook_url", "instagram_url")}),
         ("Localisation", {"fields": ("adresse_zone", "adresse_reperes", "latitude", "longitude")}),
+        ("Photo / vidéo d'accueil", {
+            "fields": ("hero_image", "hero_video"),
+            "description": "La vidéo prend le pas sur la photo si les deux sont renseignées.",
+        }),
     )
 
     def has_add_permission(self, request):
@@ -2641,6 +3655,21 @@ class AnnonceAdmin(admin.ModelAdmin):
         return obj.est_visible()
 
 
+@admin.register(PhotoSalle)
+class PhotoSalleAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "actif", "ordre_affichage", "date_ajout")
+    list_editable = ("actif", "ordre_affichage")
+    list_filter = ("actif",)
+
+
+@admin.register(VideoSalle)
+class VideoSalleAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "type_video", "programme", "actif", "ordre_affichage", "date_ajout")
+    list_editable = ("actif", "ordre_affichage")
+    list_filter = ("type_video", "actif", "programme")
+
+
+
 
 === ./core/apps.py ===
 from django.apps import AppConfig
@@ -2648,6 +3677,7 @@ from django.apps import AppConfig
 
 class CoreConfig(AppConfig):
     name = 'core'
+
 
 
 
@@ -2670,8 +3700,10 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Limite de messages par visiteur par jour (stockée en session), pour
-# contenir le coût API — pas une vraie mesure de sécurité anti-abus.
+# Limite de messages par visiteur par jour (stockée en session), pour une
+# UX de courtoisie ("tu as atteint ta limite"). La vraie mesure anti-abus
+# est le throttle par IP dans core/views.py (_limite_ip_atteinte), qui ne
+# dépend pas du cookie de session — voir audit sécurité 09/07/2026.
 LIMITE_MESSAGES_PAR_JOUR = 20
 
 # Nombre d'échanges (user + assistant) conservés dans l'historique de
@@ -2767,6 +3799,7 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
         return MESSAGE_REPLI
 
 
+
 === ./core/context_processors.py ===
 from actualites.models import Actualite
 from coaching.models import Programme
@@ -2802,10 +3835,13 @@ def site_config(request):
 
 
 
+
 === ./core/management/__init__.py ===
 
 
+
 === ./core/management/commands/__init__.py ===
+
 
 
 === ./core/management/commands/seed_tgym.py ===
@@ -2834,47 +3870,54 @@ class Command(BaseCommand):
         config.save()
         self.stdout.write(self.style.SUCCESS("SiteConfig mise à jour."))
 
-        Plan.objects.all().delete()
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="Premium",
-            categorie=Plan.Categorie.PREMIUM,
-            prix_fcfa=25000,
-            periode="/ mois",
-            description_courte="Tout compris",
-            inclus=[
-                "Accès salle",
-                "Suivi coach permanent",
-                "Contrôle de résultat",
-                "Accompagnement nutritionnel",
-            ],
-            is_populaire=True,
-            ordre_affichage=1,
+            defaults=dict(
+                categorie=Plan.Categorie.PREMIUM,
+                prix_fcfa=25000,
+                periode="/ mois",
+                description_courte="Tout compris",
+                inclus=[
+                    "Accès salle",
+                    "Suivi coach permanent",
+                    "Contrôle de résultat",
+                    "Accompagnement nutritionnel",
+                ],
+                is_populaire=True,
+                ordre_affichage=1,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="14 séances / mois",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=15000,
-            periode="",
-            description_courte="14 séances dans le mois",
-            ordre_affichage=2,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=15000,
+                periode="",
+                description_courte="14 séances dans le mois",
+                ordre_affichage=2,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="2 séances / semaine",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=10000,
-            periode="",
-            description_courte="2 séances par semaine",
-            ordre_affichage=3,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=10000,
+                periode="",
+                description_courte="2 séances par semaine",
+                ordre_affichage=3,
+            ),
         )
-        Plan.objects.create(
+        Plan.objects.update_or_create(
             nom="1 séance / semaine",
-            categorie=Plan.Categorie.FLEXIBLE,
-            prix_fcfa=5000,
-            periode="",
-            description_courte="1 séance par semaine",
-            ordre_affichage=4,
+            defaults=dict(
+                categorie=Plan.Categorie.FLEXIBLE,
+                prix_fcfa=5000,
+                periode="",
+                description_courte="1 séance par semaine",
+                ordre_affichage=4,
+            ),
         )
-        self.stdout.write(self.style.SUCCESS("4 formules tarifaires créées."))
+        self.stdout.write(self.style.SUCCESS("4 formules tarifaires à jour."))
 
         Annonce.objects.get_or_create(
             message="Nouveau programme : 45 jours pour maigrir — places limitées, inscrivez-vous sur WhatsApp !",
@@ -2900,7 +3943,8 @@ class Command(BaseCommand):
                     "Assistance psychologique à distance",
                     "Contrôle de résultat régulier",
                 ],
-                prix_note="Inclus dans l'abonnement Premium — contactez-nous pour les modalités hors abonnement.",
+                prix_fcfa=35000,
+                prix_note="Peut aussi être inclus dans l'abonnement Premium — contactez-nous pour les modalités.",
                 est_phare=True,
                 actif=True,
                 ordre_affichage=1,
@@ -2927,8 +3971,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
-
-
 
 === ./core/models.py ===
 from django.core.exceptions import ValidationError
@@ -2973,6 +4015,17 @@ class SiteConfig(models.Model):
         help_text="Ex: 2.3548",
     )
 
+    hero_image = models.ImageField(
+        "Photo de fond (accueil)", upload_to="site/", null=True, blank=True,
+        help_text="Photo large de la salle affichée derrière le titre de l'accueil. "
+                   "Idéalement une photo prise en salle, ambiance/lumière (1600px de large minimum).",
+    )
+    hero_video = models.FileField(
+        "Vidéo de fond (accueil, optionnel)", upload_to="site/", null=True, blank=True,
+        help_text="Courte vidéo (10-20s, en boucle, sans son) de l'ambiance de la salle. "
+                   "Si renseignée, prend le pas sur la photo de fond. Fichier léger recommandé (<10 Mo).",
+    )
+
     def google_maps_url(self) -> str:
         """
         Lien direct vers Google Maps — pas d'API, pas de clé, pas de
@@ -3008,6 +4061,93 @@ class SiteConfig(models.Model):
         verbose_name_plural = "Configuration du site"
 
 
+class VideoSalle(models.Model):
+    """
+    Vidéos courtes de la salle, affichées sur l'accueil (et, pour les
+    généralistes, sur /tarifs/ aussi). Trois usages :
+    - non liée à un programme : "généraliste" (ambiance, matériel, salle),
+      affichée dans le mur vidéo (accueil ET tarifs) ;
+    - liée à un programme, type "activité" : clips d'exercice/séance,
+      affichés en ligne compacte dans la section du programme phare ;
+    - liée à un programme, type "témoignage" : clips d'adhérents coupés
+      dans les passages intéressants, affichés dans le carrousel
+      "témoignages" (une vidéo à la fois, avec le son) de la section du
+      programme phare.
+    Comme PhotoSalle : sections masquées automatiquement tant qu'aucune
+    vidéo n'est en ligne, pas de placeholder cassé avant upload.
+    """
+
+    class TypeVideo(models.TextChoices):
+        GENERALE = "generale", "Généraliste (pas de programme)"
+        ACTIVITE = "activite", "Activité (programme)"
+        TEMOIGNAGE = "temoignage", "Témoignage (programme)"
+
+    fichier = models.FileField(
+        "Fichier vidéo", upload_to="videos/",
+        help_text="Format vertical ou horizontal, les deux fonctionnent. "
+                   "Fichier léger recommandé (idéalement <15 Mo, sans son "
+                   "nécessaire — elle sera lue en muet/boucle, sauf en "
+                   "carrousel témoignages où le son est utilisé).",
+    )
+    apercu = models.ImageField(
+        "Image d'aperçu (poster)", upload_to="videos/apercus/", null=True, blank=True,
+        help_text="Image affichée le temps que la vidéo charge. Optionnelle mais recommandée.",
+    )
+    legende = models.CharField("Légende (optionnelle)", max_length=150, blank=True)
+    programme = models.ForeignKey(
+        "coaching.Programme", verbose_name="Programme associé (optionnel)",
+        null=True, blank=True, on_delete=models.SET_NULL, related_name="videos",
+        help_text="Laisser vide pour une vidéo généraliste (mur accueil + tarifs). "
+                   "Renseigner pour une vidéo liée à un programme (voir le champ Type).",
+    )
+    type_video = models.CharField(
+        "Type", max_length=20, choices=TypeVideo.choices, default=TypeVideo.GENERALE,
+        help_text="Ignoré si aucun programme n'est renseigné (repasse automatiquement "
+                   "à 'Généraliste' à l'enregistrement dans ce cas).",
+    )
+    actif = models.BooleanField("Visible sur le site", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+    date_ajout = models.DateTimeField("Ajoutée le", default=timezone.now)
+
+    def save(self, *args, **kwargs):
+        # Cohérence automatique : une vidéo sans programme est forcément
+        # "généraliste", quel que soit ce qui a été sélectionné par erreur.
+        if self.programme_id is None:
+            self.type_video = self.TypeVideo.GENERALE
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.legende or f"Vidéo #{self.pk}"
+
+    class Meta:
+        verbose_name = "Vidéo de la salle"
+        verbose_name_plural = "Vidéos de la salle"
+        ordering = ["ordre_affichage", "-date_ajout"]
+
+
+class PhotoSalle(models.Model):
+    """
+    Galerie "ambiance de la salle", affichée sur l'accueil. Purement
+    éditoriale (aucune logique métier) — l'objectif est de rendre le site
+    vivant avec de vraies photos de T-GYM plutôt que des stocks génériques.
+    Section masquée automatiquement sur le site tant qu'aucune photo n'est
+    en ligne (pas de placeholder cassé avant que le staff n'en ajoute).
+    """
+    image = models.ImageField("Photo", upload_to="galerie/")
+    legende = models.CharField("Légende (optionnelle)", max_length=150, blank=True)
+    actif = models.BooleanField("Visible sur le site", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+    date_ajout = models.DateTimeField("Ajoutée le", default=timezone.now)
+
+    def __str__(self):
+        return self.legende or f"Photo #{self.pk}"
+
+    class Meta:
+        verbose_name = "Photo de la salle (galerie)"
+        verbose_name_plural = "Photos de la salle (galerie)"
+        ordering = ["ordre_affichage", "-date_ajout"]
+
+
 class Annonce(models.Model):
     """
     Bandeau coulissant ("Top Body"). Le staff peut publier/dépublier une actu,
@@ -3039,12 +4179,23 @@ class Annonce(models.Model):
 
 
 
+
 === ./core/templates/core/accueil.html ===
 {% extends "base.html" %}
 
 {% block content %}
 
-<section class="hero">
+<section class="hero {% if site_config.hero_image or site_config.hero_video %}hero--media{% endif %}">
+    {% if site_config.hero_video %}
+        <video class="hero__bg" autoplay muted loop playsinline poster="{% if site_config.hero_image %}{{ site_config.hero_image.url }}{% endif %}">
+            <source src="{{ site_config.hero_video.url }}" type="video/mp4">
+        </video>
+        <div class="hero__overlay"></div>
+    {% elif site_config.hero_image %}
+        <img class="hero__bg" src="{{ site_config.hero_image.url }}" alt="Ambiance de la salle {{ site_config.nom }}">
+        <div class="hero__overlay"></div>
+    {% endif %}
+
     <div class="container">
         <h1>{{ site_config.nom }}</h1>
         <p class="slogan">{{ site_config.slogan|upper }}</p>
@@ -3061,6 +4212,7 @@ class Annonce(models.Model):
         <a href="{% url 'core:tarifs' %}" class="btn btn-outline">Voir les tarifs</a>
     </div>
 </section>
+<div class="cable-divider cable-divider--onlight"></div>
 
 <section class="section">
     <div class="container">
@@ -3086,30 +4238,225 @@ class Annonce(models.Model):
     </div>
 </section>
 
-{% if programme_phare %}
+{% if videos_generales or galerie %}
+<div class="cable-divider cable-divider--ondark"></div>
 <section class="section section--dark">
     <div class="container">
-        <p class="eyebrow">Programme phare</p>
-        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
-        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
-        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
+        <p class="eyebrow">Dans nos murs</p>
+        <h2 style="color:var(--white);">La vie à T-GYM, sur le vif</h2>
+        <div class="video-wall">
+            {% for video in videos_generales %}
+            <div class="video-wall__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <span class="video-wall__play">▶</span>
+                {% if video.legende %}<span class="video-wall__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+            {% for photo in galerie %}
+            <div class="video-wall__tile">
+                <img src="{{ photo.image.url }}" alt="{{ photo.legende|default:site_config.nom }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
+                {% if photo.legende %}<span class="video-wall__legende">{{ photo.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+<div class="cable-divider cable-divider--ondark"></div>
+{% else %}
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
+{% if programme_phare %}
+<section class="section">
+    <div class="container">
+        <div class="programme-phare">
+            {% with video_phare=videos_activite.first %}
+            <div class="programme-phare__ecran">
+                {% if video_phare %}
+                    <video src="{{ video_phare.fichier.url }}" {% if video_phare.apercu %}poster="{{ video_phare.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                {% elif galerie.first %}
+                    <img src="{{ galerie.first.image.url }}" alt="{{ programme_phare.titre }}">
+                {% endif %}
+                <span class="programme-phare__badge">Programme phare</span>
+            </div>
+            {% endwith %}
+            <div class="programme-phare__contenu">
+                <p class="eyebrow">{{ programme_phare.duree }}</p>
+                <h2>{{ programme_phare.titre }}</h2>
+                <p style="color:var(--text-muted); max-width:520px; margin-bottom:1.5rem;">{{ programme_phare.accroche }}</p>
+                <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
+            </div>
+        </div>
+
+        {% if videos_activite|length > 1 %}
+        <div class="activite-row">
+            {% for video in videos_activite|slice:"1:5" %}
+            <div class="activite-row__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                {% if video.legende %}<span class="activite-row__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if videos_temoignages %}
+        <div class="temoignages">
+            <p class="eyebrow" style="margin-top:2.5rem;">Ils l'ont vécu</p>
+            <h3 style="margin:0 0 1.25rem;">Témoignages "{{ programme_phare.titre }}"</h3>
+
+            <div class="temoignages-carrousel" data-temoignages-carrousel>
+                <div class="temoignages-carrousel__lecteur">
+                    <video data-temoignages-video playsinline muted></video>
+                    <button type="button" class="temoignages-carrousel__son" data-temoignages-son>🔇 Activer le son</button>
+                </div>
+                <div class="temoignages-carrousel__vignettes" data-temoignages-vignettes>
+                    {% for video in videos_temoignages %}
+                    <button type="button"
+                            class="temoignages-carrousel__vignette{% if forloop.first %} is-active{% endif %}"
+                            data-src="{{ video.fichier.url }}"
+                            data-poster="{% if video.apercu %}{{ video.apercu.url }}{% endif %}"
+                            aria-label="{{ video.legende|default:"Témoignage" }}">
+                        {% if video.apercu %}
+                            <img src="{{ video.apercu.url }}" alt="">
+                        {% else %}
+                            <video src="{{ video.fichier.url }}#t=0.5" preload="metadata" muted playsinline data-vignette-fallback></video>
+                        {% endif %}
+                        <span class="temoignages-carrousel__play">▶</span>
+                        {% if video.legende %}<span>{{ video.legende }}</span>{% endif %}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function () {
+            const racine = document.currentScript.closest("section").querySelector("[data-temoignages-carrousel]");
+            if (!racine) return;
+
+            const lecteur = racine.querySelector("[data-temoignages-video]");
+            const boutonSon = racine.querySelector("[data-temoignages-son]");
+            const vignettes = Array.from(racine.querySelectorAll(".temoignages-carrousel__vignette"));
+            let index = 0;
+            let sonActive = false;
+
+            // Fallback sans poster uploadé : certains navigateurs affichent
+            // un cadre noir tant qu'on n'a pas explicitement demandé une
+            // frame (le #t=0.5 dans l'URL ne suffit pas partout).
+            racine.querySelectorAll("[data-vignette-fallback]").forEach((v) => {
+                v.addEventListener("loadedmetadata", () => { v.currentTime = 0.5; }, { once: true });
+            });
+
+            function charger(i, jouer) {
+                index = (i + vignettes.length) % vignettes.length;
+                vignettes.forEach((v, n) => v.classList.toggle("is-active", n === index));
+                const v = vignettes[index];
+                lecteur.src = v.dataset.src;
+                if (v.dataset.poster) lecteur.poster = v.dataset.poster;
+                lecteur.muted = !sonActive;
+                if (jouer) lecteur.play().catch(() => {});
+            }
+
+            vignettes.forEach((v, n) => {
+                v.addEventListener("click", () => charger(n, true));
+            });
+
+            lecteur.addEventListener("ended", () => charger(index + 1, true));
+
+            boutonSon.addEventListener("click", () => {
+                sonActive = !sonActive;
+                lecteur.muted = !sonActive;
+                boutonSon.textContent = sonActive ? "🔊 Son activé" : "🔇 Activer le son";
+                if (sonActive) lecteur.play().catch(() => {});
+            });
+
+            charger(0, true);
+        })();
+        </script>
+        {% endif %}
+    </div>
+</section>
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Nous trouver</p>
+        <h2>Une salle à taille humaine, facile d'accès</h2>
+        <div class="info-strip">
+            <div class="info-strip__item">
+                <div class="info-strip__icon">📍</div>
+                <div>
+                    <h4>{{ site_config.adresse_zone }}</h4>
+                    <p>{{ site_config.adresse_reperes }}</p>
+                </div>
+            </div>
+            <div class="info-strip__item">
+                <div class="info-strip__icon">🕐</div>
+                <div>
+                    <h4>Ouvert 7j/7</h4>
+                    <p>{{ site_config.horaires_texte }}</p>
+                </div>
+            </div>
+            <div class="info-strip__item">
+                <div class="info-strip__icon">💬</div>
+                <div>
+                    <h4>Une question avant de venir ?</h4>
+                    <p>Écrivez-nous directement sur WhatsApp, on répond vite.</p>
+                </div>
+            </div>
+        </div>
+        <br>
+        <a href="{{ site_config.google_maps_url }}" target="_blank" rel="noopener" class="btn btn-outline">Voir l'itinéraire</a>
+    </div>
+</section>
+
+{% if actus_recentes %}
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">Vie de la salle</p>
+        <h2>Ça se passe à T-GYM</h2>
+        <div class="grid-3">
+            {% for actu in actus_recentes %}
+            <div class="actu-preview-card">
+                {% if actu.image %}<img src="{{ actu.image.url }}" alt="{{ actu.titre }}" loading="lazy">{% endif %}
+                <div class="actu-preview-card__body">
+                    <p class="actu-preview-card__cat">{{ actu.get_categorie_display }}</p>
+                    <h3>{{ actu.titre }}</h3>
+                    <p>{{ actu.accroche }}</p>
+                    <a href="{% url 'actualites:actualite_detail' actu.slug %}" class="btn btn-outline">Lire</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <br>
+        <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">Toutes les actualités</a>
     </div>
 </section>
 {% endif %}
 
 {% if plan_populaire %}
-<section class="section section--grey">
+<div class="cable-divider cable-divider--ondark"></div>
+<section class="section section--dark">
     <div class="container">
         <p class="eyebrow">Formule la plus choisie</p>
-        <h2>{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
+        <h2 style="color:var(--white);">{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
         <a href="{% url 'core:tarifs' %}" class="btn btn-primary">Voir toutes les formules</a>
     </div>
 </section>
+<div class="cable-divider cable-divider--onlight"></div>
 {% endif %}
 
+<section class="section">
+    <div class="container cta-final">
+        <p class="eyebrow">Prêt(e) à commencer ?</p>
+        <h2>Le premier pas, c'est un message.</h2>
+        <p>Pas d'engagement à distance, pas de paiement en ligne — on discute d'abord, sur WhatsApp, comme entre voisins.</p>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Nous écrire sur WhatsApp</a>
+    </div>
+</section>
+
 {% endblock %}
-
-
 
 === ./core/templates/core/methode.html ===
 {% extends "base.html" %}
@@ -3166,6 +4513,7 @@ class Annonce(models.Model):
 
 
 
+
 === ./core/templates/core/ou_nous_trouver.html ===
 {% extends "base.html" %}
 
@@ -3209,6 +4557,7 @@ class Annonce(models.Model):
 </section>
 
 {% endblock %}
+
 
 
 
@@ -3262,7 +4611,28 @@ class Annonce(models.Model):
     </div>
 </section>
 
+{% if videos_generales %}
+<div class="cable-divider cable-divider--ondark"></div>
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Avant de vous décider</p>
+        <h2 style="color:var(--white);">Un aperçu de l'intérieur</h2>
+        <div class="video-wall">
+            {% for video in videos_generales %}
+            <div class="video-wall__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <span class="video-wall__play">▶</span>
+                {% if video.legende %}<span class="video-wall__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
 {% endblock %}
+
 
 
 
@@ -3271,6 +4641,7 @@ import json
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -3434,6 +4805,12 @@ class PagesPubliquesTests(TestCase):
 class ChatbotMessageViewTests(TestCase):
     def setUp(self):
         self.url = reverse("core:chatbot_message")
+        # Le throttle IP (core/views.py::_limite_ip_atteinte, ajouté suite à
+        # l'audit sécurité du 09/07/2026) vit dans le cache Django, qui
+        # n'est PAS réinitialisé automatiquement entre les tests comme la
+        # base de test l'est. Sans ce clear(), un test qui épuise la limite
+        # contaminerait les suivants dans la même exécution.
+        cache.clear()
 
     def _post(self, message):
         return self.client.post(
@@ -3485,6 +4862,53 @@ class ChatbotMessageViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["reponse"], "Réponse générée par Gemini (mock).")
 
+    @override_settings(GEMINI_API_KEY="")
+    def test_limite_par_ip_resiste_a_un_nouveau_client_sans_cookies(self):
+        # Audit sécurité 09/07/2026, finding #4 : avant correctif, un script
+        # qui ignore les cookies de session contournait totalement la limite
+        # (25/25 passaient). On simule ici exactement ce scénario : chaque
+        # requête utilise un NOUVEAU client Django (donc une nouvelle
+        # session), mais la même IP de test (REMOTE_ADDR par défaut du
+        # client de test). Le throttle par IP doit quand même se déclencher.
+        from django.test import Client
+
+        for _ in range(20):
+            resp = Client().post(
+                self.url, data=json.dumps({"message": "test"}),
+                content_type="application/json",
+            )
+            self.assertNotIn("limite_atteinte", resp.json())
+
+        resp_21 = Client().post(
+            self.url, data=json.dumps({"message": "test de trop"}),
+            content_type="application/json",
+        )
+        self.assertTrue(resp_21.json().get("limite_atteinte"))
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_limite_par_ip_respecte_x_forwarded_for(self):
+        # Deux IP différentes (via X-Forwarded-For, comme derrière Render)
+        # doivent avoir des compteurs indépendants. Client Django distinct à
+        # chaque requête pour isoler du compteur de session (test dédié au
+        # compteur IP, pas à celui de session).
+        from django.test import Client
+
+        for _ in range(20):
+            resp = Client().post(
+                self.url, data=json.dumps({"message": "test"}),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR="41.138.10.10",
+            )
+            self.assertNotIn("limite_atteinte", resp.json())
+
+        resp_autre_ip = Client().post(
+            self.url, data=json.dumps({"message": "toujours ok"}),
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR="41.138.10.99",
+        )
+        self.assertNotIn("limite_atteinte", resp_autre_ip.json())
+
+
 === ./core/urls.py ===
 from django.urls import path
 
@@ -3502,26 +4926,77 @@ urlpatterns = [
 
 
 
+
 === ./core/views.py ===
 import json
 from datetime import date
 
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
 from abonnements.models import Plan
+from actualites.models import Actualite
 from core.chatbot import LIMITE_MESSAGES_PAR_JOUR, MAX_TOURS_HISTORIQUE, obtenir_reponse
+from core.models import PhotoSalle, VideoSalle
 from core.whatsapp import build_generic_whatsapp_link, build_plan_whatsapp_link
+
+# Limite globale par IP, indépendante du cookie de session (voir audit
+# sécurité 09/07/2026 — le compteur en session seule est contournable en
+# ignorant simplement les cookies d'une requête à l'autre). Stockée dans
+# le cache Django : par défaut LocMemCache (mémoire du process), ce qui
+# suffit pour un seul worker mais doit passer sur un cache partagé
+# (Redis/Memcached) si le déploiement tourne plusieurs workers/dynos,
+# sans quoi la limite redevient contournable en frappant des workers
+# différents.
+LIMITE_MESSAGES_PAR_IP_PAR_JOUR = 20
+
+
+def _adresse_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "inconnue")
+
+
+def _limite_ip_atteinte(request) -> bool:
+    """
+    Incrémente et vérifie le compteur par IP. Retourne True si la limite
+    du jour est déjà atteinte AVANT cette requête (elle n'est alors pas
+    comptée une seconde fois).
+    """
+    cle = f"chatbot_ip:{date.today().isoformat()}:{_adresse_ip(request)}"
+    nombre = cache.get(cle, 0)
+    if nombre >= LIMITE_MESSAGES_PAR_IP_PAR_JOUR:
+        return True
+    cache.set(cle, nombre + 1, timeout=60 * 60 * 26)  # un peu plus qu'un jour
+    return False
 
 
 def accueil(request):
     plans = Plan.objects.filter(actif=True)
     plan_populaire = plans.filter(is_populaire=True).first()
     contact_link = build_generic_whatsapp_link()
+    galerie = PhotoSalle.objects.filter(actif=True)[:8]
+    videos_activite = VideoSalle.objects.filter(
+        actif=True, programme__actif=True, programme__est_phare=True,
+        type_video=VideoSalle.TypeVideo.ACTIVITE,
+    )
+    videos_temoignages = VideoSalle.objects.filter(
+        actif=True, programme__actif=True, programme__est_phare=True,
+        type_video=VideoSalle.TypeVideo.TEMOIGNAGE,
+    )
+    videos_generales = VideoSalle.objects.filter(actif=True, programme__isnull=True)[:7]
+    actus_recentes = Actualite.objects.filter(est_publiee=True)[:3]
     return render(request, "core/accueil.html", {
         "plan_populaire": plan_populaire,
         "contact_link": contact_link,
+        "galerie": galerie,
+        "videos_activite": videos_activite,
+        "videos_temoignages": videos_temoignages,
+        "videos_generales": videos_generales,
+        "actus_recentes": actus_recentes,
     })
 
 
@@ -3539,9 +5014,12 @@ def tarifs(request):
     for plan in list(plans_premium) + list(plans_flexibles):
         plan.whatsapp_link = build_plan_whatsapp_link(plan)
 
+    videos_generales = VideoSalle.objects.filter(actif=True, programme__isnull=True)[:7]
+
     return render(request, "core/tarifs.html", {
         "plans_premium": plans_premium,
         "plans_flexibles": plans_flexibles,
+        "videos_generales": videos_generales,
     })
 
 
@@ -3573,6 +5051,13 @@ def chatbot_message(request):
     if len(message) > 500:
         message = message[:500]
 
+    if _limite_ip_atteinte(request):
+        return JsonResponse({
+            "reponse": "Tu as atteint la limite de messages pour aujourd'hui. "
+                       "Écris-nous directement sur WhatsApp pour continuer !",
+            "limite_atteinte": True,
+        })
+
     aujourdhui = date.today().isoformat()
     compteur = request.session.get("chatbot_compteur", {})
     if compteur.get("date") != aujourdhui:
@@ -3596,6 +5081,7 @@ def chatbot_message(request):
     request.session["chatbot_compteur"] = compteur
 
     return JsonResponse({"reponse": reponse})
+
 
 
 
@@ -3674,6 +5160,7 @@ def build_generic_whatsapp_link(sujet: str = "") -> str:
 
 
 
+
 === ./manage.py ===
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
@@ -3700,12 +5187,14 @@ if __name__ == '__main__':
 
 
 
+
 === ./requirements.txt ===
 Django>=4.2,<5
 Pillow>=10.0
 google-generativeai>=0.7,<1.0
 requests>=2.31,<3.0
 python-dotenv>=1.0,<2.0
+
 
 
 
@@ -3721,16 +5210,70 @@ python-dotenv>=1.0,<2.0
   --grey-dark: #8a8a8a;
   --grey-light: #f7f7f7;
   --radius: 10px;
+
+  /* ---------- Tokens sémantiques (dépendent du thème clair/sombre) ----------
+     Le header, le hero, le footer et les blocs .section--dark restent
+     volontairement toujours sombres (couleurs de marque fixes ci-dessus,
+     var(--black)/var(--white) directement) : seules les surfaces "page
+     normale" (fond de page, cartes, texte courant) suivent le thème. */
+  --bg: var(--white);
+  --bg-alt: var(--grey-light);
+  --card-bg: var(--white);
+  --text: var(--black);
+  --text-muted: #555;
+  --text-muted-2: #777;
+  --border: #eee;
+  --border-strong: #ddd;
+  --danger: #c0392b;
+}
+
+[data-theme="dark"] {
+  --danger: #e0574a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --danger: #e0574a; }
+}
+
+[data-theme="dark"] {
+  --bg: #121212;
+  --bg-alt: #1a1a1a;
+  --card-bg: #1e1e1e;
+  --text: #f0f0f0;
+  --text-muted: #b0b0b0;
+  --text-muted-2: #929292;
+  --border: #2a2a2a;
+  --border-strong: #363636;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121212;
+    --bg-alt: #1a1a1a;
+    --card-bg: #1e1e1e;
+    --text: #f0f0f0;
+    --text-muted: #b0b0b0;
+    --text-muted-2: #929292;
+    --border: #2a2a2a;
+    --border-strong: #363636;
+  }
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  background: var(--white);
-  color: var(--black);
+  font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+h1, h2, .logo, .section h2 {
+  font-family: 'Anton', 'Inter', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -3788,7 +5331,25 @@ a { color: inherit; text-decoration: none; }
   background: var(--black);
   color: var(--white);
   padding: 4rem 0 3.5rem;
+  position: relative;
+  overflow: hidden;
 }
+.hero--media { padding: 6rem 0 4.5rem; }
+.hero__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+.hero__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(13,13,13,0.55) 0%, rgba(13,13,13,0.85) 75%, rgba(13,13,13,0.97) 100%);
+  z-index: 1;
+}
+.hero > .container { position: relative; z-index: 2; }
 .hero h1 {
   color: var(--yellow);
   font-size: 3rem;
@@ -3826,7 +5387,7 @@ a { color: inherit; text-decoration: none; }
 /* ---------- Sections ---------- */
 .section { padding: 3.5rem 0; }
 .section--dark { background: var(--black); color: var(--white); }
-.section--grey { background: var(--grey-light); }
+.section--grey { background: var(--bg-alt); }
 .eyebrow {
   color: var(--yellow-deep);
   font-weight: 800;
@@ -3846,9 +5407,10 @@ a { color: inherit; text-decoration: none; }
 }
 
 .card {
-  background: var(--grey-light);
+  background: var(--card-bg);
   border-radius: var(--radius);
   padding: 1.75rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .section--dark .card { background: var(--black-soft); }
 .card-icon {
@@ -3860,7 +5422,7 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 1rem;
 }
 .card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
-.card p { color: #444; font-size: 0.92rem; margin: 0; }
+.card p { color: var(--text-muted-2); font-size: 0.92rem; margin: 0; }
 .section--dark .card p { color: var(--grey); }
 
 .badge {
@@ -3874,12 +5436,59 @@ a { color: inherit; text-decoration: none; }
 .badge--warn { background: #fff3cd; color: #7a5b00; }
 .badge--muted { background: #eee; color: #666; }
 
+/* ---------- Interrupteur thème clair/sombre ---------- */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--grey-dark);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+.theme-toggle__icon { font-size: 0.95rem; line-height: 1; display: none; }
+/* Par défaut (pas de préférence enregistrée) : suit prefers-color-scheme */
+.theme-toggle__icon--sun { display: inline; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle__icon--sun { display: none; }
+  :root:not([data-theme="light"]) .theme-toggle__icon--moon { display: inline; }
+}
+/* Préférence enregistrée explicitement (l'utilisateur a cliqué) */
+[data-theme="dark"] .theme-toggle__icon--sun { display: none; }
+[data-theme="dark"] .theme-toggle__icon--moon { display: inline; }
+[data-theme="light"] .theme-toggle__icon--sun { display: inline; }
+[data-theme="light"] .theme-toggle__icon--moon { display: none; }
+
 .table-simple { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
 .table-simple th, .table-simple td {
   text-align: left; padding: 0.5rem 0.6rem; font-size: 0.88rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border);
 }
-.table-simple th { color: #777; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+.table-simple th { color: var(--text-muted-2); font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+
+/* ---------- Champs de formulaire (connexion, inscription...) ---------- */
+input[type="text"], input[type="password"], input[type="email"],
+input[type="tel"], input[type="number"], input[type="date"],
+input[type="search"], textarea, select {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.92rem;
+  font-family: inherit;
+  width: 100%;
+  max-width: 340px;
+}
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--yellow);
+  outline-offset: 1px;
+}
+.text-danger { color: var(--danger, #e05252); }
 
 /* ---------- Pricing ---------- */
 .plan-premium {
@@ -3896,7 +5505,7 @@ a { color: inherit; text-decoration: none; }
 .plan-premium li::before { content: "✔ "; color: var(--yellow); font-weight: 800; }
 
 .plan-flex {
-  background: var(--grey-light);
+  background: var(--bg-alt);
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   display: flex;
@@ -3908,7 +5517,7 @@ a { color: inherit; text-decoration: none; }
 }
 .plan-flex .price { font-size: 1.5rem; font-weight: 800; }
 .plan-flex .price small { color: var(--yellow-deep); font-weight: 700; font-size: 0.85rem; }
-.plan-flex .desc { color: #555; font-size: 0.9rem; }
+.plan-flex .desc { color: var(--text-muted); font-size: 0.9rem; }
 
 /* ---------- Footer ---------- */
 .footer {
@@ -3960,7 +5569,7 @@ a { color: inherit; text-decoration: none; }
   max-width: calc(100vw - 2rem);
   height: 420px;
   max-height: calc(100vh - 8rem);
-  background: var(--white);
+  background: var(--card-bg);
   border-radius: var(--radius);
   box-shadow: 0 10px 40px rgba(0,0,0,0.25);
   display: none;
@@ -4005,24 +5614,26 @@ a { color: inherit; text-decoration: none; }
 }
 .chatbot-msg--bot {
   align-self: flex-start;
-  background: var(--grey-light);
-  color: var(--black);
+  background: var(--bg-alt);
+  color: var(--text);
   border-bottom-left-radius: 3px;
 }
 .chatbot-msg--typing { color: #999; font-style: italic; }
 
 .chatbot-panel__form {
   display: flex;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border);
   padding: 0.6rem;
   gap: 0.5rem;
 }
 .chatbot-panel__form input {
   flex: 1;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 0.5rem 0.85rem;
   font-size: 0.85rem;
+  background: var(--card-bg);
+  color: var(--text);
 }
 .chatbot-panel__form button {
   background: var(--yellow);
@@ -4035,6 +5646,341 @@ a { color: inherit; text-decoration: none; }
 }
 .chatbot-panel__form button:disabled { opacity: 0.5; cursor: default; }
 
+/* ---------- Galerie ambiance (accueil) ---------- */
+.galerie-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 160px;
+  gap: 0.6rem;
+}
+.galerie-grid a:nth-child(5n+1) { grid-column: span 2; grid-row: span 2; }
+.galerie-item {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+}
+.galerie-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+.galerie-item:hover img { transform: scale(1.06); }
+.galerie-item__legende {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.75), transparent);
+}
+@media (max-width: 800px) {
+  .galerie-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 130px; }
+  .galerie-grid a:nth-child(5n+1) { grid-column: span 2; grid-row: span 1; }
+}
+
+/* ---------- Actus preview (accueil) ---------- */
+.actu-preview-card {
+  background: var(--bg-alt);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.actu-preview-card img { width: 100%; height: 150px; object-fit: cover; display: block; }
+.actu-preview-card__body { padding: 1.25rem; flex: 1; display: flex; flex-direction: column; }
+.actu-preview-card__cat {
+  text-transform: uppercase; font-size: 0.72rem; font-weight: 800;
+  color: var(--yellow-deep); letter-spacing: 1px; margin-bottom: 0.35rem;
+}
+.actu-preview-card h3 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+.actu-preview-card p { color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem; flex: 1; }
+
+/* ---------- Mini bloc localisation/horaires (accueil) ---------- */
+.info-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+.info-strip__item {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+.info-strip__icon {
+  width: 42px; height: 42px; flex: none;
+  background: var(--yellow);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem;
+}
+.info-strip__item h4 { margin: 0 0 0.2rem; font-size: 0.95rem; }
+.info-strip__item p { margin: 0; color: var(--grey); font-size: 0.85rem; }
+@media (max-width: 800px) {
+  .info-strip { grid-template-columns: 1fr; }
+}
+
+/* ---------- CTA final (accueil) ---------- */
+.cta-final {
+  text-align: center;
+  padding: 3.5rem 1.25rem;
+}
+.cta-final h2 { margin-bottom: 0.5rem; }
+.cta-final p { color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; }
+
+/* ---------- Motif "câble" (signature — clin d'œil aux lignes haute
+   tension au-dessus de la salle) : séparateur discret entre deux
+   sections, jamais utilisé seul comme décoration. ---------- */
+.cable-divider {
+  position: relative;
+  height: 26px;
+  background-repeat: repeat-x;
+  background-position: center;
+  background-size: 64px 26px;
+  background-image:
+    radial-gradient(circle at 32px 13px, var(--yellow) 2.5px, transparent 3px),
+    linear-gradient(180deg, transparent 12px, rgba(245,196,0,0.55) 13px, rgba(245,196,0,0.55) 14px, transparent 15px);
+}
+.cable-divider--onlight { background-color: var(--white); }
+.cable-divider--ondark { background-color: var(--black); }
+.cable-divider--ongrey { background-color: var(--grey-light); }
+
+/* ---------- Mur vidéo (section "Vie de la salle", généralistes) ----------
+   Mosaïque volontairement asymétrique : casse la grille régulière du
+   reste du site, pour un mur qui a l'air filmé sur le vif plutôt que
+   mis en page. Lecture en boucle, muette, sans son requis. */
+.video-wall {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-auto-rows: 130px;
+  gap: 0.55rem;
+}
+.video-wall__tile {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--black-soft);
+}
+.video-wall__tile video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.video-wall__tile:nth-child(6n+1) { grid-column: span 3; grid-row: span 2; }
+.video-wall__tile:nth-child(6n+2) { grid-column: span 3; grid-row: span 1; }
+.video-wall__tile:nth-child(6n+3) { grid-column: span 3; grid-row: span 1; }
+.video-wall__tile:nth-child(6n+4) { grid-column: span 2; grid-row: span 1; }
+.video-wall__tile:nth-child(6n+5) { grid-column: span 2; grid-row: span 1; }
+.video-wall__tile:nth-child(6n+6) { grid-column: span 2; grid-row: span 1; }
+.video-wall__legende {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.8), transparent);
+}
+.video-wall__play {
+  position: absolute;
+  top: 0.5rem; right: 0.5rem;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(245,196,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+  color: var(--black);
+  pointer-events: none;
+}
+@media (max-width: 800px) {
+  .video-wall { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 150px; }
+  .video-wall__tile:nth-child(n) { grid-column: span 1; grid-row: span 1; }
+  .video-wall__tile:nth-child(6n+1) { grid-column: span 2; grid-row: span 2; }
+}
+
+/* ---------- Section "Programme phare" avec vidéo portrait ----------
+   Rupture de rythme volontaire par rapport au hero (fond plein cadre)
+   et au mur vidéo (mosaïque) : ici, une seule vidéo cadrée comme un
+   écran de téléphone, à côté de la fiche programme. */
+.programme-phare {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+.programme-phare__ecran {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: 22px;
+  border: 6px solid var(--black-soft);
+  overflow: hidden;
+  background: var(--black-soft);
+  box-shadow: 0 20px 45px rgba(0,0,0,0.35);
+  justify-self: center;
+}
+.programme-phare__ecran::before {
+  content: "";
+  position: absolute;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  width: 46px; height: 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.25);
+  z-index: 2;
+}
+.programme-phare__ecran video, .programme-phare__ecran img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.programme-phare__badge {
+  position: absolute;
+  bottom: 0.8rem; left: 0.8rem;
+  background: var(--yellow);
+  color: var(--black);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+}
+.programme-phare__contenu .eyebrow { color: var(--yellow); }
+@media (max-width: 800px) {
+  .programme-phare { grid-template-columns: 1fr; }
+  .programme-phare__ecran { max-width: 240px; }
+}
+
+/* ---------- Rangée "Activité" (clips courts du programme phare) ---------- */
+.activite-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.activite-row__tile {
+  position: relative;
+  flex: none;
+  width: 130px;
+  aspect-ratio: 9 / 16;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--black-soft);
+}
+.activite-row__tile video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.activite-row__legende {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.8), transparent);
+}
+
+/* ---------- Carrousel témoignages (une vidéo active, avec le son,
+   avance automatique en boucle sur toutes les vignettes) ---------- */
+.temoignages-carrousel {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+.temoignages-carrousel__lecteur {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--black);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+}
+.temoignages-carrousel__lecteur video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.temoignages-carrousel__son {
+  position: absolute;
+  bottom: 0.75rem; left: 0.75rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(245,196,0,0.95);
+  color: var(--black);
+  cursor: pointer;
+}
+.temoignages-carrousel__vignettes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.6rem;
+  align-content: start;
+}
+.temoignages-carrousel__vignette {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  background: var(--black-soft);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.temoignages-carrousel__vignette img,
+.temoignages-carrousel__vignette video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.temoignages-carrousel__play {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+.temoignages-carrousel__vignette span:not(.temoignages-carrousel__play) {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.85), transparent);
+}
+.temoignages-carrousel__vignette.is-active {
+  border-color: var(--yellow);
+  transform: scale(1.04);
+}
+.temoignages-carrousel__vignette.is-active img,
+.temoignages-carrousel__vignette.is-active video { opacity: 1; }
+.temoignages-carrousel__vignette.is-active .temoignages-carrousel__play { display: none; }
+@media (max-width: 700px) {
+  .temoignages-carrousel { grid-template-columns: 1fr; }
+  .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
+}
+
+
 
 
 === ./templates/base.html ===
@@ -4045,7 +5991,23 @@ a { color: inherit; text-decoration: none; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+    <script>
+        // Appliqué avant le rendu pour éviter un flash clair→sombre au
+        // chargement. Lit la préférence enregistrée ; sinon ne fait rien
+        // et laisse le CSS suivre prefers-color-scheme automatiquement.
+        (function () {
+            try {
+                var theme = localStorage.getItem("tgym-theme");
+                if (theme === "dark" || theme === "light") {
+                    document.documentElement.setAttribute("data-theme", theme);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
 
@@ -4083,6 +6045,10 @@ a { color: inherit; text-decoration: none; }
                     <a href="{% url 'comptes:connexion' %}">Connexion</a>
                 {% endif %}
                 <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Changer de thème">
+                    <span class="theme-toggle__icon theme-toggle__icon--sun">☀️</span>
+                    <span class="theme-toggle__icon theme-toggle__icon--moon">🌙</span>
+                </button>
             </nav>
         </div>
     </header>
@@ -4195,12 +6161,33 @@ a { color: inherit; text-decoration: none; }
     })();
     </script>
 
+    <script>
+    (function () {
+        const bouton = document.getElementById("theme-toggle");
+        if (!bouton) return;
+
+        function themeActuel() {
+            const enregistre = document.documentElement.getAttribute("data-theme");
+            if (enregistre) return enregistre;
+            return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+
+        bouton.addEventListener("click", () => {
+            const prochain = themeActuel() === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", prochain);
+            try { localStorage.setItem("tgym-theme", prochain); } catch (e) {}
+        });
+    })();
+    </script>
+
 </body>
 </html>
 
 
 
+
 === ./tgym_site/__init__.py ===
+
 
 
 === ./tgym_site/asgi.py ===
@@ -4223,6 +6210,7 @@ application = get_asgi_application()
 
 
 
+
 === ./tgym_site/settings.py ===
 """
 Django settings for tgym_site project.
@@ -4239,6 +6227,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -4254,19 +6243,45 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# La valeur par défaut ci-dessous n'est utilisable qu'en local (elle est
-# volontairement préfixée "django-insecure-") — en production, SECRET_KEY
-# doit TOUJOURS être fournie via l'environnement.
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "django-insecure-%5u)k0)ifbo38)yq1=9tfm@&31d=e1yno_@_2k$+5@k^zx-4z!",
-)
+#
+# Suite à l'audit sécurité du 09/07/2026 : la clé par défaut n'est plus
+# utilisée dès que IS_PRODUCTION=True est explicitement posé — dans ce
+# cas, une SECRET_KEY manquante fait échouer le démarrage immédiatement
+# plutôt que de faire tourner le site avec une clé connue et documentée
+# dans ce dépôt (ce qui permettrait de forger des cookies de session, y
+# compris admin, sans connaître aucun mot de passe).
+#
+# IS_PRODUCTION est un interrupteur EXPLICITE (pas déduit d'ALLOWED_HOSTS
+# ou d'un autre réglage) : à poser à True uniquement sur l'environnement
+# Render de prod. En local, on ne le pose jamais -> DEBUG peut rester
+# True, SECRET_KEY/ALLOWED_HOSTS peuvent rester vides, rien ne bloque.
+IS_PRODUCTION = os.environ.get("IS_PRODUCTION", "False") == "True"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+
+# Ex. ALLOWED_HOSTS="tgym.example.com,www.tgym.example.com" (séparés par des virgules)
+_allowed_hosts_env = os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(",") if h.strip()]
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True") == "True"
 
-# Ex. ALLOWED_HOSTS="tgym.example.com,www.tgym.example.com" (séparés par des virgules)
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise ImproperlyConfigured(
+            "SECRET_KEY manquante alors que IS_PRODUCTION=True. Définissez "
+            "la variable d'environnement SECRET_KEY avant de démarrer. Ne "
+            "jamais réutiliser une clé qui a pu être commitée ou partagée."
+        )
+    # Local pur (IS_PRODUCTION non posé) : clé volontairement préfixée
+    # "django-insecure-", jamais utilisée si IS_PRODUCTION=True.
+    SECRET_KEY = "django-insecure-%5u)k0)ifbo38)yq1=9tfm@&31d=e1yno_@_2k$+5@k^zx-4z!"
+
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured(
+        "IS_PRODUCTION=True mais DEBUG n'est pas explicitement à False. "
+        "Définissez explicitement DEBUG=False avant de déployer."
+    )
 
 
 # Application definition
@@ -4293,6 +6308,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'comptes.middleware.AntiBruteForceMiddleware',
 ]
 
 ROOT_URLCONF = 'tgym_site.urls'
@@ -4332,7 +6348,6 @@ DATABASES = {
 
 AUTHENTICATION_BACKENDS = [
     "comptes.backends.IdentifiantOuTelephoneBackend",
-    "django.contrib.auth.backends.ModelBackend",
 ]
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -4396,6 +6411,26 @@ WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", ""
 WHATSAPP_TEMPLATE_RELANCE = os.environ.get("WHATSAPP_TEMPLATE_RELANCE", "relance_abonnement")
 WHATSAPP_TEMPLATE_LANGUE = os.environ.get("WHATSAPP_TEMPLATE_LANGUE", "fr")
 
+# Durcissement cookies/transport — actif uniquement quand IS_PRODUCTION=True
+# (donc jamais en local, jamais par accident si quelqu'un oublie juste de
+# repasser DEBUG à False). Voir audit sécurité 09/07/2026, finding #5.
+if IS_PRODUCTION:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # 1 semaine pour commencer ; à
+    # augmenter progressivement (ex: 30 jours puis 1 an) une fois HTTPS
+    # confirmé stable sur tous les sous-domaines utilisés.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    # Render (et la plupart des PaaS) terminent le TLS en amont et
+    # transmettent la requête en HTTP côté app avec cet en-tête — sans ça,
+    # request.is_secure() serait toujours faux et SECURE_SSL_REDIRECT
+    # provoquerait une boucle de redirection.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
+
+
 
 
 === ./tgym_site/urls.py ===
@@ -4434,6 +6469,7 @@ if settings.DEBUG:
 
 
 
+
 === ./tgym_site/wsgi.py ===
 """
 WSGI config for tgym_site project.
@@ -4451,6 +6487,7 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
 
 application = get_wsgi_application()
+
 
 
 

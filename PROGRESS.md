@@ -193,6 +193,31 @@ le diff contre son historique réel plutôt que contre une reconstruction.
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
 
+## Migration SDK Gemini — google-generativeai → google-genai (09/07/2026)
+✅ **Fait et testé**
+`google-generativeai` est déprécié (même migration déjà faite sur le
+projet Viral Factory) — remplacé par `google-genai` (le SDK unifié
+Google) sur les deux points d'usage isolés exprès pour ça :
+- `core/chatbot.py` : `genai.configure()` + `GenerativeModel.start_chat()`
+  → `genai.Client(api_key=...)` + `client.chats.create(model=..., history=[types.Content(...)], config=types.GenerateContentConfig(system_instruction=...))`
+- `abonnements/ia_relance.py` : `GenerativeModel.generate_content()` →
+  `client.models.generate_content(model=..., contents=...)`
+- `requirements.txt` : `google-generativeai>=0.7,<1.0` →
+  `google-genai>=2.0,<3.0`
+- `abonnements/tests.py` : mocks migrés de
+  `google.generativeai.GenerativeModel`/`.configure` vers
+  `google.genai.Client`
+
+Testé : `google-generativeai` désinstallé du tout de l'environnement de
+test pour confirmer l'absence de dépendance résiduelle — suite complète
+toujours 104/104 verts. Aucun changement de comportement côté site
+(mêmes garde-fous : message de repli si clé absente, gabarit de secours
+si l'appel échoue, `gemini-1.5-flash` inchangé).
+
+**Action à faire par David** : `pip install -r requirements.txt` pour
+récupérer `google-genai` (et éventuellement `pip uninstall
+google-generativeai` pour nettoyer l'ancien, plus utilisé).
+
 ## Dark mode + correction prix programme phare (09/07/2026)
 ✅ **Fait et testé** — aucune nouvelle migration nécessaire (pas de
 nouveau champ de modèle)
