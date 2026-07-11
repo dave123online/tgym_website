@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from abonnements.models import Plan
+from actualites.models import Actualite
 from coaching.models import Programme
 from core.models import Annonce, SiteConfig
 
@@ -16,6 +17,7 @@ class Command(BaseCommand):
         config.whatsapp_numero_1 = "94140535"
         config.whatsapp_numero_2 = "63404995"
         config.facebook_url = "https://facebook.com/tgymbenin"
+        config.instagram_url = "https://instagram.com/tgymbenin"
         config.adresse_zone = "Abomey-Calavi, tronçon Carrefour TOKAN - Carrefour HOUÈTÔ"
         config.adresse_reperes = "À gauche en quittant le carrefour Tokan, ou à droite en quittant le carrefour Houètô."
         config.save()
@@ -94,4 +96,26 @@ class Command(BaseCommand):
             ),
         )
         self.stdout.write(self.style.SUCCESS("Programme phare '45 jours pour maigrir' créé."))
+
+        Actualite.objects.update_or_create(
+            slug="bienvenue-sur-le-nouveau-site-t-gym",
+            defaults=dict(
+                titre="Bienvenue sur le nouveau site T-GYM",
+                categorie="actu_salle",
+                accroche="Découvrez nos formules, notre programme phare et toute l'actu de la salle, désormais en ligne.",
+                corps=(
+                    "T-GYM lance son site officiel ! Vous pouvez désormais consulter nos formules "
+                    "d'abonnement, découvrir le programme \"45 jours pour maigrir\" et nous contacter "
+                    "directement sur WhatsApp en un clic.\n\n"
+                    "Cette page Actualités sera mise à jour régulièrement avec des conseils, les "
+                    "résultats de nos adhérents et les temps forts de la salle. Revenez souvent !"
+                ),
+                is_featured=True,
+                est_publiee=True,
+            ),
+        )
+        self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
+
+
+

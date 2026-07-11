@@ -1,0 +1,4456 @@
+=== ./PROGRESS.md ===
+# T-GYM — Suivi d'avancement
+
+Dernière mise à jour : 08/07/2026
+
+Légende : ✅ fait & testé · 🔄 en cours · ⏳ pas commencé · 🔒 bloqué (dépendance externe)
+
+---
+
+## Phase 1 — Vitrine + Tarifs + Funnel WhatsApp
+✅ **Terminée et testée**
+- SiteConfig (singleton), Annonce (bandeau), Plan (grille tarifaire)
+- Liens WhatsApp pré-remplis (wa.me, clic visiteur uniquement)
+- Lien Google Maps direct (sans API)
+- Pages Accueil / La Méthode / Tarifs / Où nous trouver
+- Admin Django en français, seed_tgym
+
+## Phase 1.5 — Programmes
+✅ **Terminée et testée**
+- Modèle Programme extensible, page liste + détail
+- Programme "phare" auto-affiché (context processor global)
+- "45 jours pour maigrir" chargé via seed_tgym
+
+## Phase 2 — Actualités
+✅ **Terminée et testée**
+- Modèle Actualite (catégorie, image optionnelle, is_featured, est_publiee)
+- Page liste `/actualites/` + détail `/actualites/<slug>/`
+- Bandeau "Top Body News" auto-alimenté par l'actu is_featured
+  (fallback quand aucune Annonce n'est active)
+- Lien nav "Actualités"
+
+## Phase 3 — Comptes, abonnements, relance auto, chatbot
+
+### Étape 1 — Comptes & rôles
+✅ **Terminée et testée** (08/07/2026)
+- App `comptes` : modèle `Profil` (OneToOne sur `auth.User`) avec rôle
+  `staff` / `coach` / `adherent`
+- Pas de swap `AUTH_USER_MODEL` (trop risqué sur la base déjà migrée) —
+  le `User` Django standard reste la source d'auth, `Profil` ajoute la
+  couche "rôle métier" par-dessus
+- Signal : tout nouveau `User` reçoit un `Profil` automatiquement
+  (staff/superuser → rôle staff, sinon adhérent par défaut)
+- Migration de backfill : les comptes déjà existants (ex: `shade`) ont
+  reçu un `Profil` rétroactivement — vérifié en shell
+- Admin : rôle éditable inline sur la fiche User + liste Profil dédiée
+- Vues : `/connexion/`, `/deconnexion/`, `/mon-espace/` (point d'entrée
+  unique qui affichera le bon contenu selon le rôle)
+- `comptes/decorators.py` : `role_required(*roles)` prêt à l'emploi pour
+  les futurs dashboards coach/adhérent
+- Testé : toutes les pages existantes toujours en HTTP 200, `/connexion/`
+  200, `/mon-espace/` redirige bien vers connexion si non authentifié,
+  formulaire de login fonctionnel (CSRF + erreurs affichées)
+
+### Étape 2 — Modèle Abonnement (adhérent ↔ plan ↔ expiration)
+✅ **Terminée et testée** (08/07/2026)
+- `Abonnement` : lien `User` ↔ `Plan` ↔ `date_debut`/`date_fin`
+- `duree_jours` sur `Plan` → calcul automatique de `date_fin` à la sauvegarde
+  (écrase toute saisie manuelle si la formule a une durée définie)
+- `est_en_cours()` pour retrouver l'abonnement actif d'un adhérent
+- Admin avec inlines (Profil + Abonnements sur la fiche User)
+- Historique des contrôles de résultat : pas encore fait, reporté (lié au
+  rôle coach, hors scope immédiat)
+- Affichage dans `/mon-espace/` : fait le 08/07/2026 (abonnement en cours
+  avec badge selon délai avant expiration + historique en tableau)
+
+### Étape 3 — Détection des expirations + génération de message IA
+✅ **Terminée et testée** (08/07/2026)
+- Modèle `RelanceMessage` (`abonnements/models.py`) : message généré,
+  `date_expiration_ciblee` (snapshot pour éviter les doublons), statut
+  (`a_envoyer` / `envoye` / `ignore`), `genere_par_ia`, traçabilité de
+  l'envoi manuel (`envoye_le`, `envoye_par`)
+- `abonnements/ia_relance.py` : génération via Gemini, isolée dans une
+  seule fonction (`generer_message_relance`) — même principe que
+  `core/whatsapp.py`, point unique de changement si le provider IA change
+- Ne lève jamais d'exception : si `GEMINI_API_KEY` est absente ou l'appel
+  échoue, bascule silencieusement sur un message de secours (gabarit fixe)
+  pour ne jamais bloquer la tâche planifiée
+- Commande `python manage.py generer_relances [--jours N]` (défaut 3
+  jours) : détecte les abonnements `actif=True` dont `date_fin` tombe
+  dans la fenêtre, génère un message par abonnement concerné
+- Idempotente : ne régénère pas de message pour la même échéance si un
+  `RelanceMessage` existe déjà pour ce couple (abonnement, date_fin)
+- Admin `RelanceMessage` : actions "Marquer comme envoyé" / "Ignorer"
+  pour le suivi manuel — le staff copie le texte vers WhatsApp lui-même
+  en attendant l'Étape 4
+- `GEMINI_API_KEY` ajoutée aux settings (`os.environ`, vide par défaut →
+  fallback automatique) + `google-generativeai` dans `requirements.txt`
+- Testé en conditions réelles (copie jetable) : abonnement expirant dans
+  2 jours détecté avec `--jours 3` par défaut, message de secours généré
+  correctement (pas de clé Gemini en environnement de test), deuxième
+  exécution de la commande → 0 doublon créé
+- ⏳ Reste à décider : mécanisme de planification (Render Cron Job,
+  Celery beat, ou autre) — pas encore choisi, à trancher en phase
+  Déploiement ou avant si besoin
+
+### Étape 4 — Couche d'envoi WhatsApp Business Cloud API (Meta)
+✅ **Terminée et testée** (08/07/2026)
+- Variables d'environnement ajoutées (vides par défaut) : `WHATSAPP_ACCESS_TOKEN`,
+  `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`,
+  `WHATSAPP_TEMPLATE_RELANCE` (défaut `relance_abonnement`), `WHATSAPP_TEMPLATE_LANGUE`
+  (défaut `fr`)
+- Fonction d'envoi isolée : `abonnements/whatsapp_api.py::envoyer_template_relance`
+  — tout le reste du code passe par elle, jamais l'API Meta directement
+  (placée dans `abonnements/` plutôt que `comptes/` suggéré en placeholder,
+  plus cohérent avec `ia_relance.py` et `RelanceMessage`)
+- ⚠️ **Décision d'architecture** : l'API Cloud de Meta exige un template
+  pré-approuvé pour tout message business-initiated hors fenêtre de 24h —
+  impossible d'y envoyer le texte libre généré par Gemini. Le texte IA
+  reste donc réservé à la copie manuelle par le staff ; l'envoi automatique
+  utilise un template Meta séparé avec 3 variables structurées (prénom,
+  formule, date d'expiration). **Le template `relance_abonnement` reste à
+  créer et faire approuver côté Meta Business Manager** — sans lui, l'envoi
+  automatique échouera même une fois les tokens fournis.
+- Tant que les credentials sont absents : `envoyer_template_relance` lève
+  `EnvoiWhatsAppIndisponible`, logguée et absorbée par l'appelant — le
+  message reste au statut `a_envoyer` (fallback manuel toujours actif)
+- Nouvelle commande `python manage.py envoyer_relances_whatsapp` : tente
+  l'envoi pour tous les `RelanceMessage` en attente ; en cas de succès,
+  statut → `envoye`, `envoye_automatiquement=True`, `envoye_le` renseigné
+- Nouveau champ `RelanceMessage.envoye_automatiquement` pour distinguer
+  envoi auto (Étape 4) vs envoi manuel par le staff (Étape 3), visible et
+  filtrable dans l'admin
+- `numero_international()` exposé publiquement dans `core/whatsapp.py`
+  (au lieu de rester privé) — point unique de normalisation des numéros,
+  réutilisé par les liens wa.me ET l'appel API
+- `requests` ajouté à `requirements.txt`
+- Testé avec `requests.post` mocké (3 scénarios) : pas de credentials →
+  laissé en attente sans erreur ; succès HTTP 200 → statut/traçabilité mis
+  à jour, payload vérifié (numéro international, template, 3 variables
+  dans l'ordre) ; échec HTTP 400 (ex: template inconnu) → laissé en
+  attente, log clair, aucun crash
+- 🔒 Rappel : nécessite compte Meta Business + numéro dédié validé +
+  template pré-approuvé (hors fenêtre de 24h) + opt-in client
+
+### Étape 5 — Chatbot Gemini (site)
+✅ **Terminée et testée** (08/07/2026)
+- `core/chatbot.py` (nouveau) : appel Gemini isolé (même principe que
+  `ia_relance.py`). Le contexte injecté dans le prompt système est
+  reconstruit à chaque appel depuis la base (`SiteConfig`, `Plan` actifs,
+  `Programme` phare) — le chatbot ne peut donc pas répondre avec un tarif
+  ou un horaire obsolète, et ne doit rien inventer
+- Consignes système : pas de conseil médical/nutritionnel personnalisé
+  (redirige vers un coach), pas d'invention de prix/horaires, redirection
+  vers WhatsApp pour toute action nécessitant un humain, réponses courtes
+  (2-4 phrases, format widget de chat)
+- `core/views.py::chatbot_message` (nouveau, POST uniquement) : **aucun
+  stockage en base** — tout vit en session Django (limite les données
+  personnelles conservées sans nécessité). L'historique envoyé à Gemini
+  vient toujours de la session serveur, jamais du client → impossible
+  d'injecter de faux tours de conversation dans le prompt
+- Historique de session tronqué à 6 échanges (`MAX_TOURS_HISTORIQUE`),
+  pour garder le coût par appel bas
+- Limite anti-coût : 20 messages/jour/session (`LIMITE_MESSAGES_PAR_JOUR`),
+  au-delà réponse de repli invitant à passer par WhatsApp (pas une vraie
+  protection anti-abus, juste un garde-fou de coût)
+- Widget flottant dans `templates/base.html` (bouton 🤖 en bas à gauche,
+  pour ne pas chevaucher le bouton WhatsApp 💬 en bas à droite), JS
+  vanilla (pas de dépendance front supplémentaire), style ajouté dans
+  `theme.css`
+- Réutilise `GEMINI_API_KEY` déjà configurée à l'Étape 3 — même comportement
+  de repli si absente (message invitant à contacter WhatsApp, jamais de
+  crash du widget)
+- Testé : GET refusé (405), message vide rejeté (400), fallback sans clé
+  API vérifié, succès Gemini mocké avec vérification que le contexte
+  contient bien les vraies données seedées (`Premium`, `45 jours pour
+  maigrir`), limite de 20 messages/jour déclenchée au 21e message
+
+## Déploiement
+⏳ **Pas commencé**
+- Render + WhiteNoise (statique) + Postgres (Neon ou autre), variables
+  d'environnement `SECRET_KEY` / `DEBUG` / `ALLOWED_HOSTS` — même logique
+  qu'Akem FS
+
+---
+
+## Petits points en attente (non bloquants)
+- Identifiants de test locaux (`admin` existant côté staff) à changer
+  avant toute mise en ligne — **à faire par David lui-même**, pas encore fait
+- 🔲 Lien structuré `Programme ↔ Plan` (FK ou M2M) : optionnel, à faire
+  si besoin un jour de remplacer le texte libre `prix_note` par une vraie
+  relation — pas urgent, `coaching` et `abonnements` restent deux apps
+  distinctes (décidé le 08/07/2026, voir ci-dessous)
+
+## Décisions prises
+- **08/07/2026 — `coaching` vs `abonnements`** : apps gardées séparées.
+  `coaching.Programme` = contenu éditorial public (pas de donnée sensible),
+  `abonnements` = facturation + données liées à un `User` (et bientôt
+  relances/API WhatsApp) — périmètres différents, pas de raison de fusionner.
+  Rien n'empêche d'ajouter une vraie FK `Programme → Plan` plus tard si
+  besoin d'un lien structuré (au lieu du texte libre `prix_note` actuel).
+- **08/07/2026 — Coordonnées GPS T-GYM** : pas encore disponibles, on garde
+  le fallback adresse texte pour le lien Google Maps (déjà en place, aucun
+  changement de code nécessaire). À renseigner dans l'admin (`SiteConfig`)
+  quand elles seront disponibles.
+- **08/07/2026 — `/mon-espace/` (adhérent)** : branché sur les vraies
+  données (voir Étape 2 ci-dessus) — plus un placeholder.
+
+## Sécurité — audit du 09/07/2026
+🔄 **To-do, pas encore corrigé** (voir tgym_rapport_securite.txt pour le
+détail complet des mécanismes et preuves empiriques)
+
+Bloquant avant tout déploiement public :
+- 🔲 Changer le mot de passe du superuser `admin` (déjà su, jamais fait)
+- 🔲 Définir `SECRET_KEY` (neuve, jamais celle commitée), `DEBUG=False` et
+  `ALLOWED_HOSTS` explicitement dans l'environnement de prod (Render) —
+  vérifié que sans ça, DEBUG=True s'active par défaut et expose les pages
+  techniques Django (stack traces, settings, requêtes SQL)
+
+Élevé/moyen, à traiter rapidement après le déploiement initial :
+- 🔲 `comptes/backends.py::IdentifiantOuTelephoneBackend` — canal de timing
+  mesuré (~430ms d'écart, ~0.88s compte existant vs ~0.45s inexistant) qui
+  permet d'énumérer les identifiants/téléphones à distance. Cause : le
+  backend perso s'ajoute à `ModelBackend` au lieu de le remplacer, donc les
+  deux hashent le mot de passe pour un compte existant (2x le coût) contre
+  un seul hash factice pour un compte inexistant. Corriger en appelant un
+  hash factice systématique sur le chemin "introuvable", et évaluer si
+  `ModelBackend` doit rester dans `AUTHENTICATION_BACKENDS` vu que le
+  backend perso fait déjà la recherche par username.
+- 🔲 `core/views.py::chatbot_message` — limite de 20 msg/jour stockée en
+  session, donc contournable en ne réutilisant pas le cookie (vérifié :
+  25 messages envoyés avec sessions fraîches, 0 blocage). Ajouter un
+  throttling par IP indépendant de la session (django-ratelimit ou
+  équivalent) avant mise en ligne publique du chatbot.
+- 🔲 Durcissement cookies/HTTPS pour la prod : `SESSION_COOKIE_SECURE`,
+  `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`,
+  `CSRF_TRUSTED_ORIGINS` — aucun n'est actuellement défini, même
+  conditionnellement. À ajouter dans un bloc `if not DEBUG:` à l'étape
+  Déploiement.
+
+Faible, backlog :
+- 🔲 Anti-brute-force sur `/connexion/` et `/admin/login/` (django-axes ou
+  throttling IP) — pas urgent vu l'entropie correcte des mots de passe
+  générés (~57 bits), mais aucune défense en profondeur actuellement pour
+  les comptes staff à mot de passe choisi à la main.
+- 🔲 Écart entre les tests décrits dans ce fichier (scénarios précis,
+  "mocké", "405 sur GET"...) et la réalité : tous les `tests.py` étaient
+  vides avant le 09/07/2026 (`Found 0 test(s)`). Corrigé — voir section
+  "Tests de régression" ci-dessous.
+- 🔲 (mineur, backlog) `google-generativeai` est officiellement déprécié
+  côté Google (`FutureWarning` vu en lançant les tests) au profit de
+  `google-genai`. Migration à prévoir un jour dans `ia_relance.py` et
+  `chatbot.py` — pas urgent, le package actuel fonctionne toujours.
+
+Vérifié SANS problème trouvé lors de cet audit (pour référence, ne pas
+re-vérifier inutilement) : pas de XSS stocké (aucun `|safe` en template,
+chatbot utilise `textContent`), pas d'injection SQL (tout passe par
+l'ORM), pas d'IDOR sur `/mon-espace/` (toujours filtré sur `request.user`),
+`creer_compte_adherent` correctement protégée par rôle, pas d'upload
+public d'image, CSRF correct sur le chatbot, credentials WhatsApp/Gemini
+jamais codées en dur.
+
+## Tests de régression
+✅ **Créés le 09/07/2026** — 96 tests au total (`python manage.py test`),
+un `tests.py` par app couvrant le comportement actuel (modèles, vues
+publiques, formulaires, décorateur de rôle, backend d'auth, générateurs
+de liens WhatsApp, fallback IA sans clé API, commandes de gestion,
+mocks Gemini/API WhatsApp Business). Objectif : pouvoir lancer
+`python manage.py test` en un coup avant chaque changement et détecter
+toute régression sur ce qui marche déjà. Ne couvrent PAS encore les
+corrections de sécurité ci-dessus (pas encore faites) — à compléter au
+fur et à mesure qu'elles seront traitées.
+
+
+- 🐛 **08/07/2026** — `AUTHENTICATION_BACKENDS` (backend `comptes.backends.
+  IdentifiantOuTelephoneBackend`, connexion par téléphone) avait été ajouté
+  dans un `./settings.py` orphelin à la racine, jamais lu par Django
+  (`manage.py` pointe vers `tgym_site.settings`). Le vrai fichier
+  `tgym_site/settings.py` ne l'avait donc jamais chargé — la connexion par
+  téléphone tombait silencieusement sur le `ModelBackend` par défaut.
+  Corrigé : bloc déplacé dans `tgym_site/settings.py`, fichier orphelin
+  supprimé.
+- 🐛 **08/07/2026** — `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` étaient encore
+  codés en dur dans `settings.py` malgré la mention "même logique qu'Akem
+  FS" dans la section Déploiement de ce fichier — en réalité rien n'était
+  branché sur l'environnement. Corrigé : les trois lisent maintenant
+  `os.environ` (avec repli dev sûr pour `SECRET_KEY`/`DEBUG` uniquement —
+  aucun repli pour `ALLOWED_HOSTS`, qui doit être explicitement fourni en
+  prod). `python-dotenv` ajouté + `load_dotenv()` appelé en tête de
+  `settings.py` pour que `.env` soit réellement chargé en local (sans ça,
+  un `.env.example` rempli n'aurait servi à rien). Voir `.env.example`
+  à la racine pour la liste complète des variables reconnues.
+
+
+
+=== ./README.md ===
+# T-GYM — Site Web (Phase 1 + 1.5 + 2)
+
+Projet Django, même stack que Akem FS (SQLite en dev, prêt pour Postgres/Render en prod).
+
+## Ce qui est livré
+
+**Phase 1 — Vitrine + Tarifs + Funnel WhatsApp**
+- Vitrine : Accueil, La Méthode, Où nous trouver
+- Grille tarifaire dynamique (Premium + 3 formules flexibles), éditable depuis l'admin
+- Funnel WhatsApp : chaque plan génère un lien `wa.me` pré-rempli (aucun envoi automatique — c'est toujours le visiteur qui clique)
+- Bandeau coulissant ("Top Body") piloté depuis l'admin (`Annonce`)
+- Configuration du site centralisée (`SiteConfig`) : contacts, horaires, réseaux, localisation
+- Lien Google Maps direct (avec GPS si renseigné, sinon adresse texte en fallback) — pas d'API, pas de clé
+- Admin Django personnalisé en français
+
+**Phase 1.5 — Programmes (dont "45 jours pour maigrir")**
+- App `coaching` : modèle `Programme` extensible (titre, accroche, durée, objectif, inclus, tarif)
+- Page liste `/programmes/` + fiche détail `/programmes/<slug>/`
+- Le programme marqué "phare" (`est_phare=True`) s'affiche automatiquement sur l'Accueil et La Méthode via le context processor global — aucune donnée en dur dans les templates
+- Lien WhatsApp contextualisé ("Bonjour, j'ai une question à propos de : le programme 45 jours pour maigrir")
+
+**Phase 2 — Actualités**
+- App `actualites` : modèle `Actualite` (titre, catégorie, accroche, corps, image optionnelle, `is_featured`, `est_publiee`)
+- Page liste `/actualites/` + fiche détail `/actualites/<slug>/`
+- Une actualité marquée `is_featured=True` alimente le bandeau **"Top Body News"** en haut du site — même mécanisme que l'Annonce et le Programme phare (context processor global, aucune donnée en dur)
+- Le bandeau "Top Body News" ne s'affiche que si aucune `Annonce` n'est active (l'Annonce reste prioritaire pour les infos ponctuelles type promo/horaire)
+- Lien "Actualités" ajouté à la navigation
+- Une actualité de démo est chargée par `seed_tgym`
+
+## Apps
+
+- `core` : pages publiques, `SiteConfig`, `Annonce`, `whatsapp.py` (builder de liens)
+- `abonnements` : modèle `Plan` (grille tarifaire)
+- `coaching` : modèle `Programme` (programmes phares, extensible)
+- `actualites` : modèle `Actualite` (retention, bandeau "Top Body News")
+
+## Démarrage rapide
+
+```bash
+cd tgym_site
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+python manage.py migrate
+python manage.py seed_tgym        # charge les vraies données (config, tarifs, programme phare, annonce démo, actu démo)
+python manage.py createsuperuser  # ton compte admin
+
+python manage.py runserver
+```
+
+Puis :
+- Site : http://127.0.0.1:8000/
+- Admin : http://127.0.0.1:8000/admin/
+
+## Modifier le contenu sans toucher au code
+
+Tout se fait dans `/admin/` :
+- **Configuration du site** → contacts WhatsApp, horaires, Facebook, adresse, GPS
+- **Formules tarifaires** → prix, contenu inclus, mise en avant ("populaire")
+- **Programmes** → ajouter/modifier un programme, cocher "Programme phare" pour le mettre en avant sur l'accueil
+- **Annonces (bandeau)** → activer/désactiver le bandeau coulissant, programmer une date de fin
+- **Actualités** → publier/dépublier, cocher "Mise en avant" pour alimenter le bandeau "Top Body News"
+
+## Prochaines étapes (pas encore construites)
+
+- Phase 3 (nécessite WhatsApp Business Cloud API côté Meta) : comptes adhérents/coachs, relance automatique, diffusion d'actus en masse, chatbot Gemini
+
+## Déploiement (à venir)
+
+Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'environnement pour `SECRET_KEY`/`DEBUG`/`ALLOWED_HOSTS`, Postgres en prod. Pas encore configuré — on le fera à l'étape déploiement.
+
+
+
+
+=== ./abonnements/__init__.py ===
+
+
+=== ./abonnements/admin.py ===
+from django.contrib import admin
+from django.utils import timezone
+
+from .models import Abonnement, Plan, RelanceMessage
+
+
+@admin.register(Plan)
+class PlanAdmin(admin.ModelAdmin):
+    list_display = ("nom", "categorie", "prix_fcfa", "periode", "is_populaire", "actif", "ordre_affichage")
+    list_filter = ("categorie", "actif", "is_populaire")
+    list_editable = ("ordre_affichage", "actif", "is_populaire")
+    search_fields = ("nom",)
+    fieldsets = (
+        (None, {"fields": ("nom", "categorie", "description_courte")}),
+        ("Tarif", {"fields": ("prix_fcfa", "periode", "duree_jours")}),
+        ("Contenu", {"fields": ("inclus",)}),
+        ("Affichage", {"fields": ("is_populaire", "actif", "ordre_affichage")}),
+    )
+
+
+@admin.register(Abonnement)
+class AbonnementAdmin(admin.ModelAdmin):
+    list_display = ("user", "plan", "date_debut", "date_fin", "actif", "est_en_cours")
+    list_filter = ("actif", "plan__categorie", "plan")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "plan__nom")
+    autocomplete_fields = ("user", "plan")
+    date_hierarchy = "date_debut"
+
+
+@admin.register(RelanceMessage)
+class RelanceMessageAdmin(admin.ModelAdmin):
+    list_display = (
+        "abonnement", "date_expiration_ciblee", "statut", "genere_par_ia",
+        "envoye_automatiquement", "date_generation",
+    )
+    list_filter = ("statut", "genere_par_ia", "envoye_automatiquement")
+    search_fields = (
+        "abonnement__user__username", "abonnement__user__first_name",
+        "abonnement__user__last_name", "contenu",
+    )
+    readonly_fields = ("date_generation",)
+    autocomplete_fields = ("abonnement",)
+    date_hierarchy = "date_generation"
+    actions = ["marquer_comme_envoye", "marquer_comme_ignore"]
+    fieldsets = (
+        (None, {"fields": ("abonnement", "date_expiration_ciblee", "statut")}),
+        ("Message", {"fields": ("contenu", "genere_par_ia")}),
+        ("Suivi de l'envoi", {
+            "fields": ("date_generation", "envoye_le", "envoye_par", "envoye_automatiquement"),
+        }),
+    )
+
+    @admin.action(description="Marquer comme envoyé (je viens de le copier vers WhatsApp)")
+    def marquer_comme_envoye(self, request, queryset):
+        maj = queryset.update(
+            statut=RelanceMessage.Statut.ENVOYE,
+            envoye_le=timezone.now(),
+            envoye_par=request.user,
+        )
+        self.message_user(request, f"{maj} message(s) marqué(s) comme envoyé(s).")
+
+    @admin.action(description="Ignorer (ne pas envoyer)")
+    def marquer_comme_ignore(self, request, queryset):
+        maj = queryset.update(statut=RelanceMessage.Statut.IGNORE)
+        self.message_user(request, f"{maj} message(s) marqué(s) comme ignoré(s).")
+
+
+
+=== ./abonnements/apps.py ===
+from django.apps import AppConfig
+
+
+class AbonnementsConfig(AppConfig):
+    name = 'abonnements'
+
+
+
+=== ./abonnements/ia_relance.py ===
+"""
+Génération du message de relance personnalisé, via Gemini.
+
+Point unique de changement : si le fournisseur IA change un jour, seule
+cette fonction `generer_message_relance` est à modifier — la commande de
+détection et l'admin n'en connaissent que la signature (même logique que
+`core/whatsapp.py` pour l'isolation de l'envoi).
+
+Ne lève jamais d'exception vers l'appelant : si la clé API est absente ou
+si l'appel échoue, on bascule silencieusement sur un message de secours
+(gabarit fixe) pour ne jamais bloquer la tâche planifiée.
+"""
+import logging
+
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _prenom(abonnement) -> str:
+    return abonnement.user.first_name or abonnement.user.username
+
+
+def _date_fin_affichee(abonnement) -> str:
+    return abonnement.date_fin.strftime("%d/%m/%Y") if abonnement.date_fin else "bientôt"
+
+
+def _prompt(abonnement) -> str:
+    return (
+        "Tu écris un message WhatsApp court et chaleureux, en français, au nom de "
+        "la salle de sport T-GYM (Bénin), pour relancer un adhérent dont l'abonnement "
+        "arrive à expiration. Ton amical et motivant, jamais culpabilisant.\n\n"
+        f"Prénom de l'adhérent : {_prenom(abonnement)}\n"
+        f"Formule actuelle : {abonnement.plan.nom}\n"
+        f"Date d'expiration : {_date_fin_affichee(abonnement)}\n\n"
+        "Contraintes :\n"
+        "- 3 à 5 phrases maximum\n"
+        "- Pas plus d'un ou deux emojis\n"
+        "- Termine par une invitation claire à renouveler\n"
+        "- Ne mentionne aucun prix (le staff les confirmera de vive voix)\n"
+        "- Signe simplement « L'équipe T-GYM »"
+    )
+
+
+def _message_secours(abonnement) -> str:
+    """Gabarit fixe utilisé si l'IA est indisponible (clé absente ou erreur API)."""
+    return (
+        f"Bonjour {_prenom(abonnement)}, ton abonnement « {abonnement.plan.nom} » "
+        f"arrive à expiration le {_date_fin_affichee(abonnement)}. N'hésite pas à "
+        "passer nous voir ou à nous répondre pour le renouveler et garder ta lancée. "
+        "L'équipe T-GYM."
+    )
+
+
+def generer_message_relance(abonnement) -> tuple[str, bool]:
+    """
+    Retourne (message, genere_par_ia).
+
+    genere_par_ia=False signifie que le message de secours a été utilisé
+    (clé GEMINI_API_KEY absente ou appel Gemini en échec).
+    """
+    api_key = getattr(settings, "GEMINI_API_KEY", "")
+    if not api_key:
+        logger.info(
+            "GEMINI_API_KEY absente — message de secours utilisé pour l'abonnement #%s",
+            abonnement.pk,
+        )
+        return _message_secours(abonnement), False
+
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(_prompt(abonnement))
+        texte = (response.text or "").strip()
+        if not texte:
+            raise ValueError("Réponse vide de Gemini")
+        return texte, True
+    except Exception:
+        logger.exception(
+            "Échec de la génération Gemini pour l'abonnement #%s — message de secours utilisé",
+            abonnement.pk,
+        )
+        return _message_secours(abonnement), False
+
+
+=== ./abonnements/management/__init__.py ===
+
+
+=== ./abonnements/management/commands/__init__.py ===
+
+
+=== ./abonnements/management/commands/envoyer_relances_whatsapp.py ===
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+
+from abonnements.models import RelanceMessage
+from abonnements.whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_template_relance
+
+
+class Command(BaseCommand):
+    help = (
+        "Tente l'envoi automatique (WhatsApp Business Cloud API) des messages "
+        "de relance encore au statut « à envoyer ». Si les credentials Meta ne "
+        "sont pas configurés, ou si l'envoi échoue pour un abonnement donné, le "
+        "message reste simplement « à envoyer » pour copie manuelle par le "
+        "staff — cette commande ne bloque jamais rien, même sans être branchée."
+    )
+
+    def handle(self, *args, **options):
+        en_attente = (
+            RelanceMessage.objects.filter(statut=RelanceMessage.Statut.A_ENVOYER)
+            .select_related("abonnement__user", "abonnement__plan", "abonnement__user__profil")
+        )
+
+        if not en_attente.exists():
+            self.stdout.write("Aucun message de relance en attente d'envoi.")
+            return
+
+        envoyes = 0
+        laisses_en_attente = 0
+
+        for relance in en_attente:
+            try:
+                envoyer_template_relance(relance.abonnement)
+            except EnvoiWhatsAppIndisponible as exc:
+                laisses_en_attente += 1
+                self.stdout.write(f"  → {relance.abonnement} : laissé en attente ({exc})")
+                continue
+
+            relance.statut = RelanceMessage.Statut.ENVOYE
+            relance.envoye_le = timezone.now()
+            relance.envoye_automatiquement = True
+            relance.save(update_fields=["statut", "envoye_le", "envoye_automatiquement"])
+            envoyes += 1
+            self.stdout.write(self.style.SUCCESS(f"  → {relance.abonnement} : envoyé automatiquement"))
+
+        self.stdout.write(self.style.SUCCESS(
+            f"{envoyes} message(s) envoyé(s) automatiquement, "
+            f"{laisses_en_attente} laissé(s) pour envoi manuel."
+        ))
+
+
+=== ./abonnements/management/commands/generer_relances.py ===
+from datetime import date, timedelta
+
+from django.core.management.base import BaseCommand
+
+from abonnements.ia_relance import generer_message_relance
+from abonnements.models import Abonnement, RelanceMessage
+
+
+class Command(BaseCommand):
+    help = (
+        "Détecte les abonnements qui expirent bientôt et génère un message de "
+        "relance personnalisé (via Gemini, avec message de secours si l'IA est "
+        "indisponible). Les messages restent au statut « à envoyer » : le staff "
+        "les consulte dans l'admin et les copie manuellement vers WhatsApp, en "
+        "attendant le branchement de l'API WhatsApp Business (Étape 4)."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--jours", type=int, default=3,
+            help="Nombre de jours avant expiration à partir duquel générer une relance (défaut: 3).",
+        )
+
+    def handle(self, *args, **options):
+        jours = options["jours"]
+        aujourdhui = date.today()
+        date_limite = aujourdhui + timedelta(days=jours)
+
+        candidats = Abonnement.objects.filter(
+            actif=True,
+            date_fin__isnull=False,
+            date_fin__gte=aujourdhui,
+            date_fin__lte=date_limite,
+        ).select_related("user", "plan")
+
+        crees = 0
+        ignores = 0
+
+        for abonnement in candidats:
+            deja_genere = abonnement.relances.filter(
+                date_expiration_ciblee=abonnement.date_fin
+            ).exists()
+            if deja_genere:
+                ignores += 1
+                continue
+
+            contenu, genere_par_ia = generer_message_relance(abonnement)
+            RelanceMessage.objects.create(
+                abonnement=abonnement,
+                date_expiration_ciblee=abonnement.date_fin,
+                contenu=contenu,
+                genere_par_ia=genere_par_ia,
+            )
+            crees += 1
+            origine = "IA" if genere_par_ia else "secours"
+            self.stdout.write(f"  → {abonnement} : message généré ({origine})")
+
+        self.stdout.write(self.style.SUCCESS(
+            f"{crees} message(s) de relance créé(s), {ignores} déjà existant(s) ignoré(s) "
+            f"(fenêtre : abonnements expirant d'ici {jours} jour(s))."
+        ))
+
+
+=== ./abonnements/models.py ===
+from datetime import date, timedelta
+
+from django.conf import settings
+from django.db import models
+
+
+class Plan(models.Model):
+    """
+    Une formule tarifaire T-GYM (Premium mensuel ou formule flexible).
+    Modèle volontairement simple : pas de tailles, pas de multi-devise —
+    une salle de sport a une poignée de formules, pas un catalogue.
+    """
+
+    class Categorie(models.TextChoices):
+        PREMIUM = "premium", "Abonnement Standard (Premium)"
+        FLEXIBLE = "flexible", "Formule flexible (à la carte)"
+
+    nom = models.CharField("Nom de la formule", max_length=100)
+    categorie = models.CharField(
+        "Catégorie", max_length=20, choices=Categorie.choices, default=Categorie.FLEXIBLE
+    )
+    prix_fcfa = models.PositiveIntegerField("Prix (FCFA)")
+    periode = models.CharField(
+        "Période", max_length=50, help_text="Ex: /mois, pour 14 séances/mois, /semaine"
+    )
+    duree_jours = models.PositiveIntegerField(
+        "Durée (jours)", null=True, blank=True,
+        help_text="Utilisée pour calculer automatiquement la date de fin d'un abonnement "
+                   "(ex: 30 pour un mensuel). Laisser vide pour les formules sans durée "
+                   "calculable (ex: à la carte) — la date de fin restera alors saisie manuellement.",
+    )
+    description_courte = models.CharField(
+        "Description courte", max_length=150, blank=True,
+        help_text="Ex: '14 séances dans le mois'"
+    )
+    inclus = models.JSONField(
+        "Éléments inclus", default=list, blank=True,
+        help_text="Liste de points affichés sous forme de checklist (ex: ['Accès salle', 'Suivi coach permanent'])",
+    )
+    is_populaire = models.BooleanField(
+        "Mettre en avant", default=False,
+        help_text="Affiche cette formule comme le choix recommandé sur la grille tarifaire."
+    )
+    actif = models.BooleanField("Actif (visible sur le site)", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+
+    def prix_affiche(self) -> str:
+        return f"{self.prix_fcfa:,} FCFA {self.periode}".replace(",", ".")
+
+    def __str__(self):
+        return f"{self.nom} — {self.prix_affiche()}"
+
+    class Meta:
+        verbose_name = "Formule tarifaire"
+        verbose_name_plural = "Formules tarifaires"
+        ordering = ["ordre_affichage", "prix_fcfa"]
+
+
+class Abonnement(models.Model):
+    """
+    Souscription d'un user à une formule (Plan), avec historique.
+
+    Un user peut avoir plusieurs Abonnement dans le temps (renouvellements,
+    changements de formule). `actif` + `est_en_cours()` permettent de
+    retrouver rapidement l'abonnement courant sans supprimer l'historique.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="abonnements", verbose_name="Adhérent",
+    )
+    plan = models.ForeignKey(
+        Plan, on_delete=models.PROTECT,
+        related_name="abonnements", verbose_name="Formule",
+    )
+    date_debut = models.DateField("Date de début", default=date.today)
+    date_fin = models.DateField(
+        "Date de fin", null=True, blank=True,
+        help_text="Calculée automatiquement si la formule a une durée définie (écrase la saisie "
+                   "manuelle à chaque enregistrement). Sinon, à renseigner à la main.",
+    )
+    actif = models.BooleanField(
+        "Actif", default=True,
+        help_text="Décoche pour clore/annuler cet abonnement sans le supprimer.",
+    )
+    date_creation = models.DateTimeField("Créé le", auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        # Si la formule a une durée définie, la date de fin est toujours
+        # recalculée depuis date_debut + duree_jours (écrase toute saisie
+        # manuelle). Sinon (formule "à la carte" sans duree_jours), on ne
+        # touche pas à date_fin — laissée à la main du staff.
+        if self.plan_id and self.plan.duree_jours is not None:
+            self.date_fin = self.date_debut + timedelta(days=self.plan.duree_jours)
+        super().save(*args, **kwargs)
+
+    def est_en_cours(self) -> bool:
+        if not self.actif:
+            return False
+        if self.date_fin and self.date_fin < date.today():
+            return False
+        return self.date_debut <= date.today()
+
+    est_en_cours.boolean = True
+    est_en_cours.short_description = "En cours"
+
+    def jours_restants(self):
+        """Nombre de jours avant expiration, ou None si pas de date_fin définie."""
+        if not self.date_fin:
+            return None
+        return (self.date_fin - date.today()).days
+
+    def __str__(self):
+        return f"{self.user.get_username()} — {self.plan.nom} ({self.date_debut})"
+
+    class Meta:
+        verbose_name = "Abonnement"
+        verbose_name_plural = "Abonnements"
+        ordering = ["-date_debut", "-date_creation"]
+
+
+class RelanceMessage(models.Model):
+    """
+    Message de relance généré (via IA) pour un abonnement qui arrive à
+    expiration. Tant que l'Étape 4 (API WhatsApp Business) n'est pas
+    branchée, ces messages restent au statut A_ENVOYER : le staff les
+    consulte dans l'admin et les copie manuellement vers WhatsApp.
+    """
+
+    class Statut(models.TextChoices):
+        A_ENVOYER = "a_envoyer", "À envoyer (copier manuellement)"
+        ENVOYE = "envoye", "Envoyé"
+        IGNORE = "ignore", "Ignoré"
+
+    abonnement = models.ForeignKey(
+        Abonnement, on_delete=models.CASCADE,
+        related_name="relances", verbose_name="Abonnement",
+    )
+    date_expiration_ciblee = models.DateField(
+        "Date d'expiration ciblée",
+        help_text="Copie de la date de fin de l'abonnement au moment de la génération — "
+                   "sert à éviter de régénérer un message pour la même échéance.",
+    )
+    contenu = models.TextField("Message généré")
+    genere_par_ia = models.BooleanField(
+        "Généré par l'IA", default=True,
+        help_text="Décoché si l'IA était indisponible au moment de la génération "
+                   "et qu'un message de secours (gabarit fixe) a été utilisé à la place.",
+    )
+    statut = models.CharField(
+        "Statut", max_length=20, choices=Statut.choices, default=Statut.A_ENVOYER,
+    )
+    date_generation = models.DateTimeField("Généré le", auto_now_add=True)
+    envoye_le = models.DateTimeField("Envoyé le", null=True, blank=True)
+    envoye_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="relances_envoyees", verbose_name="Envoyé par",
+        help_text="Membre du staff qui a envoyé le message manuellement. "
+                   "Vide si l'envoi a été automatique (voir « Envoyé automatiquement »).",
+    )
+    envoye_automatiquement = models.BooleanField(
+        "Envoyé automatiquement", default=False,
+        help_text="Coché si envoyé via l'API WhatsApp Business (Étape 4), "
+                   "décoché si envoyé/à envoyer manuellement par le staff.",
+    )
+
+    def __str__(self):
+        return f"Relance {self.abonnement} — {self.get_statut_display()}"
+
+    class Meta:
+        verbose_name = "Message de relance"
+        verbose_name_plural = "Messages de relance"
+        ordering = ["-date_generation"]
+
+
+
+=== ./abonnements/tests.py ===
+from datetime import date, timedelta
+from io import StringIO
+from unittest.mock import Mock, patch
+
+from django.contrib.auth.models import User
+from django.core.management import call_command
+from django.test import TestCase, override_settings
+
+from abonnements.ia_relance import generer_message_relance
+from abonnements.models import Abonnement, Plan, RelanceMessage
+from abonnements.whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_template_relance
+
+
+class PlanModelTests(TestCase):
+    def test_prix_affiche_formate_avec_separateur_de_milliers(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois")
+        self.assertEqual(plan.prix_affiche(), "25.000 FCFA / mois")
+
+    def test_str_contient_nom_et_prix(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois")
+        self.assertIn("Premium", str(plan))
+
+
+class AbonnementModelTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="testclient", password="x")
+
+    def test_date_fin_calculee_automatiquement_si_duree_definie(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        debut = date(2026, 1, 1)
+        abo = Abonnement.objects.create(user=self.user, plan=plan, date_debut=debut)
+        self.assertEqual(abo.date_fin, date(2026, 1, 31))
+
+    def test_date_fin_calculee_ecrase_toute_saisie_manuelle(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        abo = Abonnement.objects.create(
+            user=self.user, plan=plan, date_debut=date(2026, 1, 1),
+            date_fin=date(2099, 1, 1),  # saisie manuelle volontairement absurde
+        )
+        self.assertEqual(abo.date_fin, date(2026, 1, 31))
+
+    def test_date_fin_non_touchee_si_formule_sans_duree(self):
+        plan = Plan.objects.create(nom="1 séance / semaine", prix_fcfa=5000, periode="", duree_jours=None)
+        abo = Abonnement.objects.create(
+            user=self.user, plan=plan, date_debut=date(2026, 1, 1), date_fin=None,
+        )
+        self.assertIsNone(abo.date_fin)
+
+    def test_est_en_cours_true_pour_abonnement_actif_dans_la_fenetre(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        abo = Abonnement.objects.create(user=self.user, plan=plan, date_debut=date.today())
+        self.assertTrue(abo.est_en_cours())
+
+    def test_est_en_cours_false_si_inactif(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        abo = Abonnement.objects.create(user=self.user, plan=plan, date_debut=date.today(), actif=False)
+        self.assertFalse(abo.est_en_cours())
+
+    def test_est_en_cours_false_si_date_fin_passee(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        abo = Abonnement.objects.create(user=self.user, plan=plan, date_debut=date.today() - timedelta(days=60))
+        self.assertFalse(abo.est_en_cours())
+
+    def test_jours_restants_none_si_pas_de_date_fin(self):
+        plan = Plan.objects.create(nom="Flexible", prix_fcfa=5000, periode="", duree_jours=None)
+        abo = Abonnement.objects.create(user=self.user, plan=plan, date_debut=date.today())
+        self.assertIsNone(abo.jours_restants())
+
+
+class IaRelanceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="awa", password="x", first_name="Awa")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        self.abo = Abonnement.objects.create(
+            user=self.user, plan=self.plan, date_debut=date.today() - timedelta(days=27),
+        )
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_sans_cle_api_utilise_le_message_de_secours(self):
+        message, genere_par_ia = generer_message_relance(self.abo)
+        self.assertFalse(genere_par_ia)
+        self.assertIn("Awa", message)
+        self.assertIn("Premium", message)
+
+    @override_settings(GEMINI_API_KEY="fake-key")
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.configure")
+    def test_avec_gemini_mocke_utilise_la_reponse_ia(self, mock_configure, mock_model_cls):
+        mock_instance = Mock()
+        mock_instance.generate_content.return_value = Mock(text="Salut Awa, pense à renouveler !")
+        mock_model_cls.return_value = mock_instance
+
+        message, genere_par_ia = generer_message_relance(self.abo)
+        self.assertTrue(genere_par_ia)
+        self.assertEqual(message, "Salut Awa, pense à renouveler !")
+
+    @override_settings(GEMINI_API_KEY="fake-key")
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.configure")
+    def test_erreur_gemini_bascule_sur_le_secours_sans_exception(self, mock_configure, mock_model_cls):
+        mock_instance = Mock()
+        mock_instance.generate_content.side_effect = RuntimeError("Gemini down")
+        mock_model_cls.return_value = mock_instance
+
+        message, genere_par_ia = generer_message_relance(self.abo)
+        self.assertFalse(genere_par_ia)
+        self.assertIn("Awa", message)
+
+
+class GenererRelancesCommandTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="koffi", password="x", first_name="Koffi")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_genere_une_relance_pour_abonnement_expirant_bientot(self):
+        Abonnement.objects.create(
+            user=self.user, plan=self.plan,
+            date_debut=date.today() - timedelta(days=28),  # expire dans 2 jours
+        )
+        out = StringIO()
+        call_command("generer_relances", "--jours", "3", stdout=out)
+        self.assertEqual(RelanceMessage.objects.count(), 1)
+        self.assertIn("1 message(s)", out.getvalue())
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_ignore_abonnement_hors_fenetre(self):
+        Abonnement.objects.create(
+            user=self.user, plan=self.plan,
+            date_debut=date.today(),  # expire dans 30 jours, hors fenêtre de 3
+        )
+        call_command("generer_relances", "--jours", "3", stdout=StringIO())
+        self.assertEqual(RelanceMessage.objects.count(), 0)
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_idempotent_pas_de_doublon_sur_deuxieme_execution(self):
+        Abonnement.objects.create(
+            user=self.user, plan=self.plan,
+            date_debut=date.today() - timedelta(days=28),
+        )
+        call_command("generer_relances", "--jours", "3", stdout=StringIO())
+        call_command("generer_relances", "--jours", "3", stdout=StringIO())
+        self.assertEqual(RelanceMessage.objects.count(), 1)
+
+
+class WhatsappApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="fatima", password="x", first_name="Fatima")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        self.abo = Abonnement.objects.create(
+            user=self.user, plan=self.plan, date_debut=date.today() - timedelta(days=28),
+        )
+        # Profil créé automatiquement par le signal ; on renseigne le téléphone.
+        self.user.profil.telephone = "94140535"
+        self.user.profil.save(update_fields=["telephone"])
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="", WHATSAPP_PHONE_NUMBER_ID="")
+    def test_sans_credentials_leve_indisponible(self):
+        with self.assertRaises(EnvoiWhatsAppIndisponible):
+            envoyer_template_relance(self.abo)
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="token-test", WHATSAPP_PHONE_NUMBER_ID="123456")
+    def test_sans_telephone_leve_indisponible(self):
+        self.user.profil.telephone = ""
+        self.user.profil.save(update_fields=["telephone"])
+        with self.assertRaises(EnvoiWhatsAppIndisponible):
+            envoyer_template_relance(self.abo)
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="token-test", WHATSAPP_PHONE_NUMBER_ID="123456")
+    @patch("requests.post")
+    def test_succes_renvoie_le_json_et_le_bon_payload(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: {"messages": [{"id": "wamid.abc"}]})
+
+        resultat = envoyer_template_relance(self.abo)
+
+        self.assertEqual(resultat, {"messages": [{"id": "wamid.abc"}]})
+        appel = mock_post.call_args
+        payload = appel.kwargs["json"]
+        self.assertEqual(payload["to"], "22994140535")
+        self.assertEqual(payload["template"]["name"], "relance_abonnement")
+        parametres = payload["template"]["components"][0]["parameters"]
+        self.assertEqual(parametres[0]["text"], "Fatima")
+        self.assertEqual(parametres[1]["text"], "Premium")
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="token-test", WHATSAPP_PHONE_NUMBER_ID="123456")
+    @patch("requests.post")
+    def test_echec_http_leve_indisponible_sans_crash(self, mock_post):
+        mock_post.return_value = Mock(status_code=400, text="template inconnu")
+        with self.assertRaises(EnvoiWhatsAppIndisponible):
+            envoyer_template_relance(self.abo)
+
+
+class EnvoyerRelancesWhatsappCommandTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="issa", password="x", first_name="Issa")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+        self.abo = Abonnement.objects.create(
+            user=self.user, plan=self.plan, date_debut=date.today() - timedelta(days=28),
+        )
+        self.relance = RelanceMessage.objects.create(
+            abonnement=self.abo, date_expiration_ciblee=self.abo.date_fin,
+            contenu="Message de test",
+        )
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="", WHATSAPP_PHONE_NUMBER_ID="")
+    def test_sans_credentials_message_reste_a_envoyer(self):
+        call_command("envoyer_relances_whatsapp", stdout=StringIO())
+        self.relance.refresh_from_db()
+        self.assertEqual(self.relance.statut, RelanceMessage.Statut.A_ENVOYER)
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN="token-test", WHATSAPP_PHONE_NUMBER_ID="123456")
+    @patch("requests.post")
+    def test_succes_marque_le_message_envoye_automatiquement(self, mock_post):
+        self.user.profil.telephone = "94140535"
+        self.user.profil.save(update_fields=["telephone"])
+        mock_post.return_value = Mock(status_code=200, json=lambda: {"messages": []})
+
+        call_command("envoyer_relances_whatsapp", stdout=StringIO())
+
+        self.relance.refresh_from_db()
+        self.assertEqual(self.relance.statut, RelanceMessage.Statut.ENVOYE)
+        self.assertTrue(self.relance.envoye_automatiquement)
+        self.assertIsNotNone(self.relance.envoye_le)
+
+=== ./abonnements/views.py ===
+from django.shortcuts import render
+
+# Create your views here.
+
+
+
+=== ./abonnements/whatsapp_api.py ===
+"""
+Envoi automatique via l'API WhatsApp Business Cloud (Meta).
+
+Point unique de changement : tout le reste du code appelle
+`envoyer_template_relance`, jamais l'API Meta directement — si un jour
+Meta change son API, ou si on ajoute un autre provider, seul ce module
+est à modifier.
+
+🔒 Nécessite : compte Meta Business + numéro dédié validé + template
+pré-approuvé (hors fenêtre de 24h, un message business-initiated ne peut
+PAS contenir de texte libre — uniquement un template Meta avec variables).
+C'est pour ça que ce module n'envoie jamais le texte généré par l'IA
+(abonnements/ia_relance.py) : ce texte reste réservé à la copie manuelle
+par le staff, qui n'est soumise à aucune de ces restrictions.
+
+Tant que les credentials ne sont pas fournis (WHATSAPP_ACCESS_TOKEN /
+WHATSAPP_PHONE_NUMBER_ID absents), `envoyer_template_relance` lève
+`EnvoiWhatsAppIndisponible` — à charge de l'appelant de garder le
+fallback "à envoyer manuellement" actif (voir generer_relances /
+envoyer_relances_whatsapp).
+"""
+import logging
+
+from django.conf import settings
+
+from core.whatsapp import numero_international
+
+logger = logging.getLogger(__name__)
+
+GRAPH_API_VERSION = "v20.0"
+TIMEOUT_SECONDS = 10
+
+
+class EnvoiWhatsAppIndisponible(Exception):
+    """Levée quand l'envoi automatique n'est pas possible (credentials
+    absents, template non configuré, ou erreur retournée par l'API Meta)."""
+
+
+def _credentials_pretes() -> bool:
+    return bool(settings.WHATSAPP_ACCESS_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID)
+
+
+def envoyer_template_relance(abonnement) -> dict:
+    """
+    Envoie le template de relance pré-approuvé pour cet abonnement, avec
+    3 variables : prénom, formule, date d'expiration.
+
+    Retourne la réponse JSON de l'API Meta en cas de succès.
+    Lève `EnvoiWhatsAppIndisponible` dans tous les cas d'échec (jamais
+    d'autre exception ne doit remonter à l'appelant).
+    """
+    if not _credentials_pretes():
+        raise EnvoiWhatsAppIndisponible(
+            "WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID absents — "
+            "envoi automatique indisponible, message laissé pour envoi manuel."
+        )
+
+    profil = getattr(abonnement.user, "profil", None)
+    telephone = getattr(profil, "telephone", "") or ""
+    if not telephone:
+        raise EnvoiWhatsAppIndisponible(
+            f"Aucun téléphone renseigné pour {abonnement.user.get_username()} "
+            "— message laissé pour envoi manuel."
+        )
+
+    numero = numero_international(telephone)
+    prenom = abonnement.user.first_name or abonnement.user.username
+    plan_nom = abonnement.plan.nom
+    date_fin = abonnement.date_fin.strftime("%d/%m/%Y") if abonnement.date_fin else "bientôt"
+
+    url = (
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/"
+        f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero,
+        "type": "template",
+        "template": {
+            "name": settings.WHATSAPP_TEMPLATE_RELANCE,
+            "language": {"code": settings.WHATSAPP_TEMPLATE_LANGUE},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": prenom},
+                        {"type": "text", "text": plan_nom},
+                        {"type": "text", "text": date_fin},
+                    ],
+                }
+            ],
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        import requests
+
+        response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.exception("Erreur réseau lors de l'envoi WhatsApp pour l'abonnement #%s", abonnement.pk)
+        raise EnvoiWhatsAppIndisponible(f"Erreur réseau : {exc}") from exc
+
+    if response.status_code >= 400:
+        logger.error(
+            "Échec API WhatsApp pour l'abonnement #%s : HTTP %s — %s",
+            abonnement.pk, response.status_code, response.text,
+        )
+        raise EnvoiWhatsAppIndisponible(
+            f"L'API Meta a répondu HTTP {response.status_code} : {response.text}"
+        )
+
+    return response.json()
+
+
+=== ./actualites/__init__.py ===
+
+
+=== ./actualites/admin.py ===
+from django.contrib import admin
+
+from .models import Actualite
+
+
+@admin.register(Actualite)
+class ActualiteAdmin(admin.ModelAdmin):
+    list_display = ("titre", "categorie", "date_publication", "is_featured", "est_publiee")
+    list_filter = ("categorie", "is_featured", "est_publiee")
+    list_editable = ("is_featured", "est_publiee")
+    search_fields = ("titre", "accroche", "corps")
+    prepopulated_fields = {"slug": ("titre",)}
+    date_hierarchy = "date_publication"
+    fieldsets = (
+        (None, {"fields": ("titre", "slug", "categorie", "accroche")}),
+        ("Contenu", {"fields": ("corps", "image")}),
+        ("Publication", {"fields": ("is_featured", "est_publiee", "date_publication")}),
+    )
+
+
+
+=== ./actualites/apps.py ===
+from django.apps import AppConfig
+
+
+class ActualitesConfig(AppConfig):
+    name = 'actualites'
+
+
+
+=== ./actualites/models.py ===
+from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
+
+
+class Actualite(models.Model):
+    """
+    Une actualité T-GYM (conseil, événement, résultat d'adhérent...).
+    Outil de rétention : garde les adhérents engagés après leur inscription.
+    Une actualité marquée "is_featured" alimente le bandeau "Top Body News",
+    sur le même principe que l'Annonce (core) et le Programme phare (coaching).
+    """
+
+    CATEGORIE_CHOICES = [
+        ("conseil", "Conseil"),
+        ("evenement", "Événement"),
+        ("resultat", "Résultat d'adhérent"),
+        ("actu_salle", "Actu de la salle"),
+    ]
+
+    titre = models.CharField("Titre", max_length=150)
+    slug = models.SlugField("Slug (URL)", max_length=160, unique=True, blank=True)
+    categorie = models.CharField(
+        "Catégorie", max_length=20, choices=CATEGORIE_CHOICES, default="conseil"
+    )
+    accroche = models.CharField(
+        "Accroche courte", max_length=200,
+        help_text="Résumé affiché dans la liste, avant l'ouverture de l'article.",
+    )
+    corps = models.TextField("Contenu")
+    image = models.ImageField(
+        "Image", upload_to="actualites/", null=True, blank=True,
+        help_text="Optionnelle. Laisser vide si pas d'image.",
+    )
+
+    is_featured = models.BooleanField(
+        "Mise en avant (Top Body News)", default=False,
+        help_text="Alimente le bandeau 'Top Body News' affiché sur tout le site.",
+    )
+    est_publiee = models.BooleanField("Publiée (visible sur le site)", default=True)
+    date_publication = models.DateTimeField("Date de publication", default=timezone.now)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.titre)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.titre
+
+    class Meta:
+        verbose_name = "Actualité"
+        verbose_name_plural = "Actualités"
+        ordering = ["-date_publication"]
+
+
+
+=== ./actualites/templates/actualites/actualite_detail.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        {% if actualite.is_featured %}<p class="eyebrow">À la une</p>{% endif %}
+        <p style="text-transform:uppercase; font-size:0.8rem; font-weight:700; color:var(--yellow-deep);">{{ actualite.get_categorie_display }}</p>
+        <h1 style="font-size:2.2rem;">{{ actualite.titre }}</h1>
+        <p class="accroche">{{ actualite.accroche }}</p>
+        <p style="opacity:0.8;">{{ actualite.date_publication|date:"d F Y" }}</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        {% if actualite.image %}
+        <img src="{{ actualite.image.url }}" alt="{{ actualite.titre }}" style="width:100%; max-width:800px; border-radius:12px; margin-bottom:1.5rem;">
+        {% endif %}
+        <div>{{ actualite.corps|linebreaks }}</div>
+        <br>
+        <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">← Retour aux actualités</a>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./actualites/templates/actualites/actualites.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Top Body News</p>
+        <h2 style="color:var(--white);">Actualités T-GYM</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="grid-3">
+            {% for actualite in actualites %}
+            <div class="card">
+                {% if actualite.is_featured %}<p class="eyebrow">À la une</p>{% endif %}
+                <p style="text-transform:uppercase; font-size:0.75rem; font-weight:700; color:var(--yellow-deep);">{{ actualite.get_categorie_display }}</p>
+                <h3>{{ actualite.titre }}</h3>
+                <p>{{ actualite.accroche }}</p>
+                <p style="color:var(--yellow-deep); font-weight:700; margin-top:0.5rem;">{{ actualite.date_publication|date:"d F Y" }}</p>
+                <br>
+                <a href="{% url 'actualites:actualite_detail' actualite.slug %}" class="btn btn-primary">Lire</a>
+            </div>
+            {% empty %}
+            <p>Aucune actualité publiée pour le moment.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./actualites/tests.py ===
+from django.test import TestCase
+from django.urls import reverse
+
+from .models import Actualite
+
+
+class ActualiteModelTests(TestCase):
+    def test_slug_genere_automatiquement_depuis_le_titre(self):
+        actu = Actualite.objects.create(
+            titre="Nouveau programme collectif", accroche="...", corps="...",
+        )
+        self.assertEqual(actu.slug, "nouveau-programme-collectif")
+
+
+class ActualitesViewsTests(TestCase):
+    def setUp(self):
+        self.actu = Actualite.objects.create(
+            titre="Résultats du challenge de juin", categorie="resultat",
+            accroche="Bravo à tous les participants",
+            corps="Contenu complet de l'article.",
+            est_publiee=True,
+        )
+
+    def test_liste_actualites_200(self):
+        resp = self.client.get(reverse("actualites:actualites"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Résultats du challenge de juin")
+
+    def test_liste_ne_montre_pas_les_actualites_non_publiees(self):
+        Actualite.objects.create(
+            titre="Brouillon interne", accroche="...", corps="...", est_publiee=False,
+        )
+        resp = self.client.get(reverse("actualites:actualites"))
+        self.assertNotContains(resp, "Brouillon interne")
+
+    def test_detail_actualite_200(self):
+        resp = self.client.get(reverse("actualites:actualite_detail", args=[self.actu.slug]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Contenu complet de")
+
+    def test_detail_actualite_non_publiee_404(self):
+        brouillon = Actualite.objects.create(
+            titre="Brouillon interne", accroche="...", corps="...", est_publiee=False,
+        )
+        resp = self.client.get(reverse("actualites:actualite_detail", args=[brouillon.slug]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_detail_actualite_inexistante_404(self):
+        resp = self.client.get(reverse("actualites:actualite_detail", args=["inexistant"]))
+        self.assertEqual(resp.status_code, 404)
+
+=== ./actualites/urls.py ===
+from django.urls import path
+
+from . import views
+
+app_name = "actualites"
+
+urlpatterns = [
+    path("actualites/", views.actualites, name="actualites"),
+    path("actualites/<slug:slug>/", views.actualite_detail, name="actualite_detail"),
+]
+
+
+
+=== ./actualites/views.py ===
+from django.shortcuts import get_object_or_404, render
+
+from .models import Actualite
+
+
+def actualites(request):
+    liste = Actualite.objects.filter(est_publiee=True)
+    return render(request, "actualites/actualites.html", {"actualites": liste})
+
+
+def actualite_detail(request, slug):
+    actualite = get_object_or_404(Actualite, slug=slug, est_publiee=True)
+    return render(request, "actualites/actualite_detail.html", {"actualite": actualite})
+
+
+
+=== ./coaching/__init__.py ===
+
+
+=== ./coaching/admin.py ===
+from django.contrib import admin
+
+from .models import Programme
+
+
+@admin.register(Programme)
+class ProgrammeAdmin(admin.ModelAdmin):
+    list_display = ("titre", "duree", "est_phare", "actif", "ordre_affichage")
+    list_filter = ("est_phare", "actif")
+    list_editable = ("ordre_affichage", "actif", "est_phare")
+    search_fields = ("titre", "accroche")
+    prepopulated_fields = {"slug": ("titre",)}
+    fieldsets = (
+        (None, {"fields": ("titre", "slug", "accroche", "duree")}),
+        ("Contenu", {"fields": ("objectif", "inclus")}),
+        ("Tarif", {"fields": ("prix_fcfa", "prix_note")}),
+        ("Affichage", {"fields": ("est_phare", "actif", "ordre_affichage")}),
+    )
+
+
+
+=== ./coaching/apps.py ===
+from django.apps import AppConfig
+
+
+class CoachingConfig(AppConfig):
+    name = 'coaching'
+
+
+
+=== ./coaching/models.py ===
+from django.db import models
+from django.utils.text import slugify
+
+
+class Programme(models.Model):
+    """
+    Un programme phare (ex: "45 jours pour maigrir"). Pensé extensible :
+    d'autres programmes pourront être ajoutés depuis l'admin sans toucher
+    au code, chacun avec sa propre fiche.
+    """
+    titre = models.CharField("Titre", max_length=150)
+    slug = models.SlugField("Slug (URL)", max_length=160, unique=True, blank=True)
+    accroche = models.CharField(
+        "Accroche courte", max_length=200,
+        help_text="Ex: Un accompagnement intensif pour des résultats visibles et durables."
+    )
+    duree = models.CharField("Durée", max_length=50, help_text="Ex: 45 jours")
+    objectif = models.TextField("Objectif", help_text="Ce que le programme vise à obtenir pour l'adhérent.")
+
+    inclus = models.JSONField(
+        "Ce qui est inclus", default=list, blank=True,
+        help_text="Liste de points (ex: ['Suivi coach quotidien', 'Plan nutritionnel dédié'])",
+    )
+
+    prix_fcfa = models.PositiveIntegerField("Prix (FCFA)", null=True, blank=True, help_text="Laisser vide si inclus dans un abonnement existant.")
+    prix_note = models.CharField(
+        "Précision tarif", max_length=150, blank=True,
+        help_text="Ex: 'Inclus dans l'abonnement Premium' ou 'Tarif dédié, hors abonnement'",
+    )
+
+    est_phare = models.BooleanField(
+        "Programme phare", default=False,
+        help_text="Mis en avant sur la page d'accueil et la méthode.",
+    )
+    actif = models.BooleanField("Actif (visible sur le site)", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.titre)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.titre
+
+    class Meta:
+        verbose_name = "Programme"
+        verbose_name_plural = "Programmes"
+        ordering = ["ordre_affichage", "titre"]
+
+
+
+=== ./coaching/templates/coaching/programme_detail.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        {% if programme.est_phare %}<p class="eyebrow">Programme phare</p>{% endif %}
+        <h1 style="font-size:2.4rem;">{{ programme.titre }}</h1>
+        <p class="accroche">{{ programme.accroche }}</p>
+        <div class="hero-hours">
+            <div>
+                <strong>Durée</strong>
+                <span>{{ programme.duree }}</span>
+            </div>
+        </div>
+        <br>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">M'inscrire à ce programme sur WhatsApp</a>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container grid-2" style="align-items:start;">
+        <div>
+            <p class="eyebrow">Objectif</p>
+            <h2 style="font-size:1.5rem;">Ce que ce programme vise pour vous</h2>
+            <p>{{ programme.objectif|linebreaks }}</p>
+        </div>
+
+        {% if programme.inclus %}
+        <div class="card">
+            <h3>Ce qui est inclus</h3>
+            <ul style="padding-left:1.1rem;">
+                {% for item in programme.inclus %}
+                <li style="margin-bottom:0.4rem;">{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{% if programme.prix_fcfa or programme.prix_note %}
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Tarif</p>
+        {% if programme.prix_fcfa %}
+            <h2>{{ programme.prix_fcfa|floatformat:0 }} FCFA</h2>
+        {% endif %}
+        {% if programme.prix_note %}
+            <p>{{ programme.prix_note }}</p>
+        {% endif %}
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Réserver ma place sur WhatsApp</a>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+
+
+=== ./coaching/templates/coaching/programmes.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Nos programmes</p>
+        <h2 style="color:var(--white);">Des accompagnements pensés pour des résultats concrets</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="grid-3">
+            {% for programme in programmes %}
+            <div class="card">
+                {% if programme.est_phare %}<p class="eyebrow">Programme phare</p>{% endif %}
+                <h3>{{ programme.titre }}</h3>
+                <p>{{ programme.accroche }}</p>
+                <p style="color:var(--yellow-deep); font-weight:700; margin-top:0.5rem;">{{ programme.duree }}</p>
+                <br>
+                <a href="{% url 'coaching:programme_detail' programme.slug %}" class="btn btn-primary">Découvrir</a>
+            </div>
+            {% empty %}
+            <p>Aucun programme disponible pour le moment.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./coaching/tests.py ===
+from django.test import TestCase
+from django.urls import reverse
+
+from .models import Programme
+
+
+class ProgrammeModelTests(TestCase):
+    def test_slug_genere_automatiquement_depuis_le_titre(self):
+        programme = Programme.objects.create(
+            titre="45 jours pour maigrir", accroche="...", duree="45 jours", objectif="...",
+        )
+        self.assertEqual(programme.slug, "45-jours-pour-maigrir")
+
+    def test_slug_manuel_est_respecte(self):
+        programme = Programme.objects.create(
+            titre="Un programme", slug="mon-slug-perso",
+            accroche="...", duree="30 jours", objectif="...",
+        )
+        self.assertEqual(programme.slug, "mon-slug-perso")
+
+
+class ProgrammesViewsTests(TestCase):
+    def setUp(self):
+        self.programme = Programme.objects.create(
+            titre="45 jours pour maigrir", accroche="Résultats rapides",
+            duree="45 jours", objectif="Perdre du poids durablement",
+            inclus=["Suivi coach quotidien", "Plan nutritionnel évolutif"],
+            est_phare=True, actif=True,
+        )
+
+    def test_liste_programmes_200(self):
+        resp = self.client.get(reverse("coaching:programmes"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "45 jours pour maigrir")
+
+    def test_liste_ne_montre_pas_les_programmes_inactifs(self):
+        Programme.objects.create(
+            titre="Programme caché", accroche="...", duree="10 jours",
+            objectif="...", actif=False,
+        )
+        resp = self.client.get(reverse("coaching:programmes"))
+        self.assertNotContains(resp, "Programme caché")
+
+    def test_detail_programme_200(self):
+        resp = self.client.get(
+            reverse("coaching:programme_detail", args=[self.programme.slug])
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Perdre du poids durablement")
+        self.assertContains(resp, "Suivi coach quotidien")
+
+    def test_detail_programme_inexistant_404(self):
+        resp = self.client.get(reverse("coaching:programme_detail", args=["inexistant"]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_detail_programme_inactif_404(self):
+        inactif = Programme.objects.create(
+            titre="Programme caché", accroche="...", duree="10 jours",
+            objectif="...", actif=False,
+        )
+        resp = self.client.get(reverse("coaching:programme_detail", args=[inactif.slug]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_detail_contient_lien_whatsapp_contextualise(self):
+        resp = self.client.get(
+            reverse("coaching:programme_detail", args=[self.programme.slug])
+        )
+        self.assertContains(resp, "wa.me")
+
+=== ./coaching/urls.py ===
+from django.urls import path
+
+from . import views
+
+app_name = "coaching"
+
+urlpatterns = [
+    path("programmes/", views.programmes, name="programmes"),
+    path("programmes/<slug:slug>/", views.programme_detail, name="programme_detail"),
+]
+
+
+
+=== ./coaching/views.py ===
+from django.shortcuts import get_object_or_404, render
+
+from core.whatsapp import build_generic_whatsapp_link
+
+from .models import Programme
+
+
+def programmes(request):
+    liste = Programme.objects.filter(actif=True)
+    return render(request, "coaching/programmes.html", {"programmes": liste})
+
+
+def programme_detail(request, slug):
+    programme = get_object_or_404(Programme, slug=slug, actif=True)
+    sujet = f"le programme {programme.titre}"
+    contact_link = build_generic_whatsapp_link(sujet)
+    return render(request, "coaching/programme_detail.html", {
+        "programme": programme,
+        "contact_link": contact_link,
+    })
+
+
+
+=== ./comptes/__init__.py ===
+
+
+=== ./comptes/admin.py ===
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import User
+
+from abonnements.models import Abonnement
+
+from .models import Profil
+
+
+class ProfilInline(admin.StackedInline):
+    model = Profil
+    can_delete = False
+    verbose_name_plural = "Profil (rôle)"
+
+
+class AbonnementInline(admin.TabularInline):
+    model = Abonnement
+    extra = 0
+    fields = ("plan", "date_debut", "date_fin", "actif")
+    autocomplete_fields = ("plan",)
+    verbose_name_plural = "Abonnements"
+
+
+class UserAdmin(BaseUserAdmin):
+    inlines = (ProfilInline, AbonnementInline)
+    list_display = BaseUserAdmin.list_display + ("get_role",)
+
+    def get_inline_instances(self, request, obj=None):
+        # Sur l'ajout (obj=None), le signal `creer_profil` crée déjà le Profil
+        # juste après le save() du User. Si on affiche aussi l'inline ici, le
+        # formset tente de créer un 2e Profil pour le même user au moment du
+        # save_related() -> UNIQUE constraint failed sur comptes_profil.user_id.
+        # On n'affiche donc l'inline qu'en modification (le Profil existe déjà).
+        # AbonnementInline n'a pas ce souci (pas de signal), on le garde même
+        # sur le formulaire d'ajout pour pouvoir assigner une formule direct.
+        if obj is None:
+            return [inline(self.model, self.admin_site) for inline in self.inlines if inline is not ProfilInline]
+        return super().get_inline_instances(request, obj)
+
+    def get_role(self, obj):
+        return getattr(obj, "profil", None) and obj.profil.get_role_display()
+    get_role.short_description = "Rôle"
+
+
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)
+
+
+@admin.register(Profil)
+class ProfilAdmin(admin.ModelAdmin):
+    list_display = ("user", "role", "telephone", "date_creation")
+    list_filter = ("role",)
+    list_editable = ("role",)
+    search_fields = ("user__username", "user__first_name", "user__last_name", "telephone")
+
+
+
+=== ./comptes/apps.py ===
+from django.apps import AppConfig
+
+
+class ComptesConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'comptes'
+    verbose_name = "Comptes & rôles"
+
+    def ready(self):
+        import comptes.signals  # noqa
+
+
+
+=== ./comptes/backends.py ===
+from django.contrib.auth.backends import ModelBackend
+from django.contrib.auth.models import User
+
+from .utils import normaliser_telephone
+
+
+class IdentifiantOuTelephoneBackend(ModelBackend):
+    """
+    Permet la connexion via l'identifiant habituel OU via le numéro de
+    téléphone du Profil, avec ou sans préfixe (00229/+229/229) — l'utilisateur
+    peut taper son numéro tel quel, dans n'importe quel format.
+    """
+
+    def authenticate(self, request, username=None, password=None, **kwargs):
+        if username is None:
+            return None
+
+        user = None
+        try:
+            user = User.objects.get(username__iexact=username)
+        except User.DoesNotExist:
+            numero = normaliser_telephone(username)
+            if numero:
+                # On compare aussi le téléphone stocké après normalisation,
+                # au cas où d'anciens comptes auraient été enregistrés avec
+                # un préfixe encore présent.
+                for profil in User.objects.filter(
+                    profil__telephone__endswith=numero
+                ).select_related("profil"):
+                    if normaliser_telephone(profil.profil.telephone) == numero:
+                        user = profil
+                        break
+
+        if user is not None and self.user_can_authenticate(user):
+            if user.check_password(password):
+                return user
+        return None
+
+
+
+=== ./comptes/decorators.py ===
+"""
+Décorateurs de contrôle d'accès par rôle.
+
+Prévus pour les prochaines étapes (dashboard adhérent avec abonnement en
+cours, dashboard coach avec saisie de contrôle de résultat) — rien d'autre
+que la connexion n'est requis à ce stade.
+"""
+from functools import wraps
+
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+
+
+def role_required(*roles):
+    """
+    Exige que l'utilisateur connecté ait un Profil avec l'un des rôles donnés.
+    Usage : @role_required(Profil.Role.COACH, Profil.Role.STAFF)
+    """
+    def decorateur(vue):
+        @wraps(vue)
+        @login_required
+        def wrapper(request, *args, **kwargs):
+            profil = getattr(request.user, "profil", None)
+            if profil is None or profil.role not in roles:
+                raise PermissionDenied("Accès réservé à un autre rôle.")
+            return vue(request, *args, **kwargs)
+        return wrapper
+    return decorateur
+
+
+
+=== ./comptes/forms.py ===
+import secrets
+import string
+
+from django import forms
+from django.contrib.auth.models import User
+from django.utils.text import slugify
+
+from abonnements.models import Plan
+
+from .utils import normaliser_telephone
+
+
+def generer_mot_de_passe(longueur: int = 10) -> str:
+    """
+    Génère un mot de passe aléatoire lisible (lettres + chiffres).
+    Pas de caractères ambigus (0/O, 1/l/I) pour limiter les erreurs de
+    recopie manuelle par le staff vers WhatsApp.
+    """
+    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(longueur))
+
+
+def generer_username(nom_complet: str) -> str:
+    """
+    Génère un identifiant de connexion à partir du nom du client
+    (ex: "Awa Koffi" -> "awakoffi"), en ajoutant un suffixe numérique
+    si l'identifiant est déjà pris.
+    """
+    base = slugify(nom_complet).replace("-", "") or "client"
+    username = base
+    compteur = 1
+    while User.objects.filter(username__iexact=username).exists():
+        compteur += 1
+        username = f"{base}{compteur}"
+    return username
+
+
+class CreationCompteAdherentForm(forms.Form):
+    """
+    Formulaire staff : juste le nom du client + son numéro WhatsApp.
+    L'identifiant de connexion ET le mot de passe sont générés côté serveur
+    à la validation, puis affichés une seule fois au staff (charge à lui de
+    les transmettre).
+    """
+    nom_complet = forms.CharField(
+        label="Nom complet du client",
+        max_length=150,
+        help_text="Utilisé pour générer automatiquement l'identifiant de connexion.",
+    )
+    telephone = forms.CharField(
+        label="Numéro WhatsApp du client",
+        max_length=20,
+        help_text="Numéro local (ex: 94140535) ou déjà préfixé 229.",
+    )
+    plan = forms.ModelChoiceField(
+        label="Formule initiale",
+        queryset=Plan.objects.filter(actif=True),
+        required=False,
+        empty_label="— Aucune (à ajouter plus tard) —",
+    )
+
+    def clean_nom_complet(self):
+        nom = self.cleaned_data["nom_complet"].strip()
+        if not nom:
+            raise forms.ValidationError("Le nom est requis.")
+        return nom
+
+    def clean_telephone(self):
+        return normaliser_telephone(self.cleaned_data["telephone"])
+
+
+
+=== ./comptes/management/__init__.py ===
+
+
+=== ./comptes/management/commands/__init__.py ===
+
+
+=== ./comptes/models.py ===
+from django.contrib.auth.models import User
+from django.db import models
+
+
+class Profil(models.Model):
+    """
+    Rôle applicatif d'un utilisateur Django, en plus de is_staff/is_superuser.
+
+    - STAFF   : admin salle, accès complet (généralement is_staff=True côté Django).
+    - COACH   : accès limité — consultation/saisie des contrôles de résultat
+                des adhérents qui lui sont confiés (fonctionnalité à venir).
+    - ADHERENT: compte client — historique, abonnement en cours (Étape 2).
+
+    On garde le User Django standard (pas de AUTH_USER_MODEL custom) pour ne
+    pas toucher aux migrations auth déjà appliquées ; ce modèle ajoute juste
+    la couche "rôle métier" par-dessus.
+    """
+
+    class Role(models.TextChoices):
+        STAFF = "staff", "Staff (admin salle)"
+        COACH = "coach", "Coach"
+        ADHERENT = "adherent", "Adhérent"
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profil")
+    role = models.CharField("Rôle", max_length=20, choices=Role.choices, default=Role.ADHERENT)
+    telephone = models.CharField(
+        "Téléphone", max_length=20, blank=True,
+        help_text="Numéro local (ex: 94140535), utilisé pour le contact/relance WhatsApp.",
+    )
+    date_creation = models.DateTimeField("Créé le", auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.get_full_name() or self.user.username} — {self.get_role_display()}"
+
+    def est_staff(self):
+        return self.role == self.Role.STAFF
+
+    def est_coach(self):
+        return self.role == self.Role.COACH
+
+    def est_adherent(self):
+        return self.role == self.Role.ADHERENT
+
+    class Meta:
+        verbose_name = "Profil"
+        verbose_name_plural = "Profils"
+        ordering = ["user__username"]
+
+
+
+=== ./comptes/signals.py ===
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+from .models import Profil
+
+
+@receiver(post_save, sender=User)
+def creer_profil(sender, instance, created, **kwargs):
+    """
+    Crée automatiquement un Profil à la création d'un User (ex: via
+    `createsuperuser` ou l'admin). Un superuser/staff Django récupère le
+    rôle STAFF par défaut, sinon ADHERENT — le staff pourra changer le rôle
+    ensuite depuis l'admin (ex: passer un compte en COACH).
+    """
+    if not created:
+        return
+    role = Profil.Role.STAFF if (instance.is_staff or instance.is_superuser) else Profil.Role.ADHERENT
+    Profil.objects.get_or_create(user=instance, defaults={"role": role})
+
+
+
+=== ./comptes/templates/comptes/changer_mot_de_passe.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container" style="max-width:420px;">
+        <p class="eyebrow">Mon espace</p>
+        <h2>Changer mon mot de passe</h2>
+
+        {% if form.errors %}
+        <p style="color:#c0392b;">
+            {% for field in form %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}
+        </p>
+        {% endif %}
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <label for="id_old_password">Mot de passe actuel</label>
+            {{ form.old_password }}
+            <br><br>
+            <label for="id_new_password1">Nouveau mot de passe</label>
+            {{ form.new_password1 }}
+            <br><br>
+            <label for="id_new_password2">Confirmer le nouveau mot de passe</label>
+            {{ form.new_password2 }}
+            <br><br>
+            <button type="submit" class="btn btn-primary">Valider</button>
+        </form>
+
+        <p style="margin-top:1rem;"><a href="{% url 'comptes:mon_espace' %}">&larr; Retour à mon espace</a></p>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./comptes/templates/comptes/changer_mot_de_passe_termine.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container" style="max-width:420px;">
+        <p class="eyebrow">Mon espace</p>
+        <h2>Mot de passe mis à jour ✅</h2>
+        <p><a href="{% url 'comptes:mon_espace' %}" class="btn btn-primary">Retour à mon espace</a></p>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./comptes/templates/comptes/connexion.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container" style="max-width:420px;">
+        <p class="eyebrow">Espace membre</p>
+        <h2>Connexion</h2>
+
+        {% if form.errors %}
+        <p style="color:#c0392b;">Identifiants incorrects. Réessayez.</p>
+        {% endif %}
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <label for="id_username">Identifiant ou numéro de téléphone</label>
+            {{ form.username }}
+            <br><br>
+            <label for="id_password">Mot de passe</label>
+            {{ form.password }}
+            <br><br>
+            <button type="submit" class="btn btn-primary">Se connecter</button>
+            <input type="hidden" name="next" value="{{ next }}">
+        </form>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./comptes/templates/comptes/creer_compte.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container" style="max-width:480px;">
+        <p class="eyebrow">Espace staff</p>
+        <h2>Créer un compte adhérent</h2>
+
+        {% if identifiants %}
+        <div class="card" style="border:2px solid var(--yellow); margin-bottom:1.5rem;">
+            <h3>Compte créé ✅</h3>
+            <p style="margin-bottom:0.75rem;">
+                Notez / transmettez ces identifiants au client maintenant —
+                ils ne seront plus réaffichés après avoir quitté cette page.
+            </p>
+            <p><strong>Client :</strong> {{ identifiants.nom_complet }}</p>
+            <p><strong>Identifiant :</strong> {{ identifiants.username }}</p>
+            <p><strong>Mot de passe :</strong>
+                <code style="font-size:1.1rem; background:var(--grey-light); padding:2px 8px; border-radius:4px;">
+                    {{ identifiants.mot_de_passe }}
+                </code>
+            </p>
+            <p><strong>WhatsApp :</strong> {{ identifiants.telephone }}</p>
+            <p><strong>Formule :</strong> {{ identifiants.plan|default:"Aucune (à ajouter plus tard)" }}</p>
+        </div>
+        {% endif %}
+
+        {% if form.errors %}
+        <p style="color:#c0392b;">
+            {% for field in form %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}
+        </p>
+        {% endif %}
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <label for="id_nom_complet">{{ form.nom_complet.label }}</label>
+            {{ form.nom_complet }}
+            <small style="display:block; color:#666; margin:2px 0 12px;">{{ form.nom_complet.help_text }}</small>
+
+            <label for="id_telephone">{{ form.telephone.label }}</label>
+            {{ form.telephone }}
+            <small style="display:block; color:#666; margin:2px 0 12px;">{{ form.telephone.help_text }}</small>
+
+            <label for="id_plan">{{ form.plan.label }}</label>
+            {{ form.plan }}
+
+            <button type="submit" class="btn btn-primary">Créer le compte</button>
+        </form>
+
+        <p style="margin-top:1rem;"><a href="{% url 'comptes:mon_espace' %}">&larr; Retour à mon espace</a></p>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./comptes/templates/comptes/mon_espace.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Mon espace</p>
+        <h2 style="color:var(--white);">Bonjour {{ request.user.first_name|default:request.user.username }}</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        {% if profil.est_adherent %}
+        <div class="card">
+            <h3>Mon abonnement</h3>
+            {% if abonnement_actif %}
+                <p>
+                    <strong>{{ abonnement_actif.plan.nom }}</strong>
+                    {% if abonnement_actif.date_fin %}
+                        {% with jours=abonnement_actif.jours_restants %}
+                            {% if jours <= 3 %}
+                                <span class="badge badge--warn">Expire dans {{ jours }} jour{{ jours|pluralize }} ({{ abonnement_actif.date_fin|date:"d/m/Y" }})</span>
+                            {% else %}
+                                <span class="badge badge--ok">Actif jusqu'au {{ abonnement_actif.date_fin|date:"d/m/Y" }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    {% else %}
+                        <span class="badge badge--ok">Actif — {{ abonnement_actif.plan.description_courte }}</span>
+                    {% endif %}
+                </p>
+                <p style="margin-top:0.4rem;color:#777;font-size:0.85rem;">Débuté le {{ abonnement_actif.date_debut|date:"d/m/Y" }}</p>
+            {% else %}
+                <p>Aucun abonnement en cours. Rendez-vous sur la <a href="{% url 'core:tarifs' %}">page tarifs</a> ou contactez le staff pour vous inscrire.</p>
+            {% endif %}
+
+            {% if historique_abonnements %}
+            <table class="table-simple">
+                <thead>
+                    <tr><th>Formule</th><th>Début</th><th>Fin</th><th>Statut</th></tr>
+                </thead>
+                <tbody>
+                    {% for a in historique_abonnements %}
+                    <tr>
+                        <td>{{ a.plan.nom }}</td>
+                        <td>{{ a.date_debut|date:"d/m/Y" }}</td>
+                        <td>{{ a.date_fin|date:"d/m/Y"|default:"—" }}</td>
+                        <td>
+                            {% if not a.actif %}<span class="badge badge--muted">Annulé</span>
+                            {% else %}<span class="badge badge--muted">Terminé</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        {% elif profil.est_coach %}
+        <div class="card">
+            <h3>Espace coach</h3>
+            <p>La saisie des contrôles de résultat arrive bientôt.</p>
+        </div>
+        {% elif profil.est_staff %}
+        <div class="card">
+            <h3>Espace staff</h3>
+            <p>Gérez le site depuis l'<a href="/admin/">administration</a>.</p>
+            <p><a href="{% url 'comptes:creer_compte_adherent' %}" class="btn btn-primary">+ Créer un compte adhérent</a></p>
+        </div>
+        {% else %}
+        <p>Profil non configuré — contactez le staff.</p>
+        {% endif %}
+
+        <br>
+        <a href="{% url 'comptes:changer_mot_de_passe' %}">Changer mon mot de passe</a>
+        <br><br>
+        <form method="post" action="{% url 'comptes:deconnexion' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline">Se déconnecter</button>
+        </form>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./comptes/tests.py ===
+from django.contrib.auth.models import User
+from django.test import TestCase
+from django.urls import reverse
+
+from abonnements.models import Abonnement, Plan
+
+from .decorators import role_required
+from .forms import generer_mot_de_passe, generer_username
+from .models import Profil
+from .utils import normaliser_telephone
+
+
+class ProfilSignalTests(TestCase):
+    def test_superuser_recoit_le_role_staff(self):
+        user = User.objects.create_superuser(username="boss", password="x", email="boss@tgym.local")
+        self.assertTrue(hasattr(user, "profil"))
+        self.assertEqual(user.profil.role, Profil.Role.STAFF)
+
+    def test_user_staff_recoit_le_role_staff(self):
+        user = User.objects.create_user(username="employe", password="x", is_staff=True)
+        self.assertEqual(user.profil.role, Profil.Role.STAFF)
+
+    def test_user_normal_recoit_le_role_adherent_par_defaut(self):
+        user = User.objects.create_user(username="client", password="x")
+        self.assertEqual(user.profil.role, Profil.Role.ADHERENT)
+
+    def test_pas_de_doublon_de_profil_a_chaque_save(self):
+        user = User.objects.create_user(username="client2", password="x")
+        user.first_name = "Modifié"
+        user.save()
+        self.assertEqual(Profil.objects.filter(user=user).count(), 1)
+
+
+class NormaliserTelephoneTests(TestCase):
+    def test_retire_prefixe_00229(self):
+        self.assertEqual(normaliser_telephone("00229 94140535"), "94140535")
+
+    def test_retire_prefixe_plus229(self):
+        self.assertEqual(normaliser_telephone("+229 94140535"), "94140535")
+
+    def test_retire_prefixe_229(self):
+        self.assertEqual(normaliser_telephone("22994140535"), "94140535")
+
+    def test_numero_local_inchange(self):
+        self.assertEqual(normaliser_telephone("94140535"), "94140535")
+
+    def test_retire_les_espaces(self):
+        self.assertEqual(normaliser_telephone("94 14 05 35"), "94140535")
+
+
+class IdentifiantOuTelephoneBackendTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="awakoffi", password="MotDePasse123")
+        self.user.profil.telephone = "94140535"
+        self.user.profil.save(update_fields=["telephone"])
+
+    def test_connexion_par_username(self):
+        ok = self.client.login(username="awakoffi", password="MotDePasse123")
+        self.assertTrue(ok)
+
+    def test_connexion_par_telephone_local(self):
+        ok = self.client.login(username="94140535", password="MotDePasse123")
+        self.assertTrue(ok)
+
+    def test_connexion_par_telephone_prefixe_229(self):
+        ok = self.client.login(username="22994140535", password="MotDePasse123")
+        self.assertTrue(ok)
+
+    def test_connexion_par_telephone_prefixe_plus229(self):
+        ok = self.client.login(username="+22994140535", password="MotDePasse123")
+        self.assertTrue(ok)
+
+    def test_mauvais_mot_de_passe_refuse(self):
+        ok = self.client.login(username="awakoffi", password="mauvais")
+        self.assertFalse(ok)
+
+    def test_identifiant_inexistant_refuse(self):
+        ok = self.client.login(username="personne_ici", password="MotDePasse123")
+        self.assertFalse(ok)
+
+    def test_vue_connexion_fonctionnelle_via_le_formulaire(self):
+        resp = self.client.post(reverse("comptes:connexion"), {
+            "username": "awakoffi", "password": "MotDePasse123",
+        })
+        self.assertRedirects(resp, reverse("comptes:mon_espace"))
+
+
+class RoleRequiredDecoratorTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(username="staffuser", password="x", is_staff=True)
+        self.adherent = User.objects.create_user(username="clientuser", password="x")
+
+    def test_anonyme_redirige_vers_connexion(self):
+        resp = self.client.get(reverse("comptes:creer_compte_adherent"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("comptes:connexion"), resp.url)
+
+    def test_adherent_recoit_403(self):
+        self.client.login(username="clientuser", password="x")
+        resp = self.client.get(reverse("comptes:creer_compte_adherent"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_staff_peut_acceder(self):
+        self.client.login(username="staffuser", password="x")
+        resp = self.client.get(reverse("comptes:creer_compte_adherent"))
+        self.assertEqual(resp.status_code, 200)
+
+
+class CreationCompteAdherentHelpersTests(TestCase):
+    def test_generer_mot_de_passe_longueur_par_defaut(self):
+        mdp = generer_mot_de_passe()
+        self.assertEqual(len(mdp), 10)
+
+    def test_generer_mot_de_passe_evite_caracteres_ambigus(self):
+        mdp = generer_mot_de_passe(longueur=200)
+        for caractere_ambigu in "0O1lI":
+            self.assertNotIn(caractere_ambigu, mdp)
+
+    def test_generer_username_slugifie_le_nom(self):
+        username = generer_username("Awa Koffi")
+        self.assertEqual(username, "awakoffi")
+
+    def test_generer_username_ajoute_un_suffixe_si_deja_pris(self):
+        User.objects.create_user(username="awakoffi", password="x")
+        username = generer_username("Awa Koffi")
+        self.assertEqual(username, "awakoffi2")
+
+
+class CreerCompteAdherentViewTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(username="staffuser", password="x", is_staff=True)
+        self.client.login(username="staffuser", password="x")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+
+    def test_creation_reussie_cree_user_profil_et_abonnement(self):
+        resp = self.client.post(reverse("comptes:creer_compte_adherent"), {
+            "nom_complet": "Issa Boni", "telephone": "94140535", "plan": self.plan.pk,
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        user = User.objects.get(username="issaboni")
+        self.assertEqual(user.profil.role, Profil.Role.ADHERENT)
+        self.assertEqual(user.profil.telephone, "94140535")
+        self.assertTrue(Abonnement.objects.filter(user=user, plan=self.plan).exists())
+
+    def test_identifiants_affiches_une_seule_fois(self):
+        self.client.post(reverse("comptes:creer_compte_adherent"), {
+            "nom_complet": "Fatima Alassane", "telephone": "63404995", "plan": "",
+        })
+        # Premier GET après création : les identifiants doivent être affichés
+        resp1 = self.client.get(reverse("comptes:creer_compte_adherent"))
+        self.assertContains(resp1, "fatimaalassane")
+        # Deuxième GET : ils ne doivent plus apparaître (pop une seule fois)
+        resp2 = self.client.get(reverse("comptes:creer_compte_adherent"))
+        self.assertNotContains(resp2, "fatimaalassane")
+
+    def test_sans_plan_aucun_abonnement_cree(self):
+        self.client.post(reverse("comptes:creer_compte_adherent"), {
+            "nom_complet": "Client Sans Plan", "telephone": "94140535", "plan": "",
+        })
+        user = User.objects.get(username="clientsansplan")
+        self.assertFalse(Abonnement.objects.filter(user=user).exists())
+
+
+class MonEspaceViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="adherent1", password="x")
+        self.plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", duree_jours=30)
+
+    def test_anonyme_redirige_vers_connexion(self):
+        resp = self.client.get(reverse("comptes:mon_espace"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_adherent_sans_abonnement_voit_la_page(self):
+        self.client.login(username="adherent1", password="x")
+        resp = self.client.get(reverse("comptes:mon_espace"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_abonnement_en_cours_affiche(self):
+        from datetime import date
+        Abonnement.objects.create(user=self.user, plan=self.plan, date_debut=date.today())
+        self.client.login(username="adherent1", password="x")
+        resp = self.client.get(reverse("comptes:mon_espace"))
+        self.assertContains(resp, "Premium")
+
+    def test_un_utilisateur_ne_voit_pas_labonnement_dun_autre(self):
+        # Vérifie l'absence d'IDOR : chaque adhérent ne voit que le sien.
+        from datetime import date
+        autre_user = User.objects.create_user(username="adherent2", password="x")
+        Abonnement.objects.create(user=autre_user, plan=self.plan, date_debut=date.today())
+
+        self.client.login(username="adherent1", password="x")
+        resp = self.client.get(reverse("comptes:mon_espace"))
+        self.assertIsNone(resp.context["abonnement_actif"])
+
+=== ./comptes/urls.py ===
+from django.urls import path
+
+from . import views
+
+app_name = "comptes"
+
+urlpatterns = [
+    path("connexion/", views.ConnexionView.as_view(), name="connexion"),
+    path("deconnexion/", views.DeconnexionView.as_view(), name="deconnexion"),
+    path("mon-espace/", views.mon_espace, name="mon_espace"),
+    path("creer-compte/", views.creer_compte_adherent, name="creer_compte_adherent"),
+    path("mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="changer_mot_de_passe"),
+    path("mot-de-passe/termine/", views.ChangerMotDePasseTermineView.as_view(), name="changer_mot_de_passe_termine"),
+]
+
+
+
+=== ./comptes/utils.py ===
+import re
+
+# Préfixes internationaux du Bénin qu'on retire en tête de numéro, dans
+# l'ordre du plus long au plus court pour ne pas laisser un "00" traîner
+# après avoir retiré seulement "229" d'un "00229...".
+PREFIXES_A_RETIRER = ["00229", "+229", "229"]
+
+
+def normaliser_telephone(valeur: str) -> str:
+    """
+    Normalise un numéro de téléphone pour comparaison/stockage : retire les
+    espaces, puis un éventuel préfixe international béninois en tête
+    (00229, +229, 229), pour ne garder que le numéro local.
+
+    "+229 94140535" -> "94140535"
+    "00229 94 14 05 35" -> "94140535"
+    "94140535" -> "94140535" (inchangé)
+    """
+    valeur = re.sub(r"\s+", "", valeur or "")
+    for prefixe in PREFIXES_A_RETIRER:
+        if valeur.startswith(prefixe):
+            return valeur[len(prefixe):]
+    return valeur
+
+
+
+=== ./comptes/views.py ===
+from abonnements.models import Abonnement
+from django.contrib.auth import views as auth_views
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.models import User
+from django.shortcuts import redirect, render
+from django.urls import reverse_lazy
+
+from .decorators import role_required
+from .forms import CreationCompteAdherentForm, generer_mot_de_passe, generer_username
+from .models import Profil
+
+
+class ConnexionView(auth_views.LoginView):
+    template_name = "comptes/connexion.html"
+    redirect_authenticated_user = True
+
+
+class DeconnexionView(auth_views.LogoutView):
+    next_page = "core:accueil"
+
+
+@login_required
+def mon_espace(request):
+    """
+    Point d'entrée unique après connexion, qui affiche le bon contenu selon
+    le rôle. Pour un adhérent : abonnement en cours + historique (Étape 2).
+    La saisie coach reste à brancher (fonctionnalité de contrôle de résultat).
+    """
+    profil = getattr(request.user, "profil", None)
+    abonnement_actif = None
+    historique_abonnements = []
+
+    if profil is not None and profil.est_adherent():
+        abonnements = list(
+            Abonnement.objects.filter(user=request.user)
+            .select_related("plan")
+            .order_by("-date_debut", "-date_creation")
+        )
+        for a in abonnements:
+            if a.est_en_cours() and abonnement_actif is None:
+                abonnement_actif = a
+            else:
+                historique_abonnements.append(a)
+
+    return render(request, "comptes/mon_espace.html", {
+        "profil": profil,
+        "abonnement_actif": abonnement_actif,
+        "historique_abonnements": historique_abonnements,
+    })
+
+
+@role_required(Profil.Role.STAFF)
+def creer_compte_adherent(request):
+    """
+    Remplace le flow "staff crée le compte à la main depuis l'admin" :
+    le staff ne saisit qu'un identifiant + un numéro WhatsApp, le mot de
+    passe est généré aléatoirement côté serveur puis affiché une seule
+    fois pour que le staff le transmette au client (WhatsApp, en main
+    propre, etc.). Le Profil (rôle adhérent) est créé automatiquement par
+    le signal `creer_profil` sur la création du User ; on complète juste
+    le téléphone ici.
+
+    Pattern Post/Redirect/Get : après soumission on redirige vers la même
+    vue en GET, avec les identifiants générés stockés en session le temps
+    d'un seul affichage (ils sont retirés dès la lecture) — un rafraîchi-
+    ssement de page ne les réaffiche pas, pour éviter qu'ils traînent.
+    """
+    identifiants = request.session.pop("identifiants_generes", None)
+
+    if request.method == "POST":
+        form = CreationCompteAdherentForm(request.POST)
+        if form.is_valid():
+            nom_complet = form.cleaned_data["nom_complet"]
+            telephone = form.cleaned_data["telephone"]
+            plan = form.cleaned_data["plan"]
+            username = generer_username(nom_complet)
+            mot_de_passe = generer_mot_de_passe()
+
+            prenom, _, nom = nom_complet.partition(" ")
+            user = User.objects.create_user(
+                username=username,
+                password=mot_de_passe,
+                first_name=prenom,
+                last_name=nom,
+            )
+            profil = user.profil
+            profil.telephone = telephone
+            profil.save(update_fields=["telephone"])
+
+            if plan is not None:
+                Abonnement.objects.create(user=user, plan=plan)
+
+            request.session["identifiants_generes"] = {
+                "nom_complet": nom_complet,
+                "username": username,
+                "mot_de_passe": mot_de_passe,
+                "telephone": telephone,
+                "plan": plan.nom if plan is not None else None,
+            }
+            return redirect("comptes:creer_compte_adherent")
+    else:
+        form = CreationCompteAdherentForm()
+
+    return render(request, "comptes/creer_compte.html", {
+        "form": form,
+        "identifiants": identifiants,
+    })
+
+
+class ChangerMotDePasseView(LoginRequiredMixin, auth_views.PasswordChangeView):
+    template_name = "comptes/changer_mot_de_passe.html"
+    success_url = reverse_lazy("comptes:changer_mot_de_passe_termine")
+
+
+class ChangerMotDePasseTermineView(LoginRequiredMixin, auth_views.PasswordChangeDoneView):
+    template_name = "comptes/changer_mot_de_passe_termine.html"
+
+
+
+=== ./core/__init__.py ===
+
+
+=== ./core/admin.py ===
+from django.contrib import admin
+
+from .models import Annonce, SiteConfig
+
+
+@admin.register(SiteConfig)
+class SiteConfigAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ("Identité", {"fields": ("nom", "slogan")}),
+        ("Horaires", {"fields": ("horaires_texte",)}),
+        ("Contacts WhatsApp", {"fields": ("whatsapp_numero_1", "whatsapp_numero_2")}),
+            ("Réseaux sociaux", {"fields": ("facebook_url", "instagram_url")}),
+        ("Localisation", {"fields": ("adresse_zone", "adresse_reperes", "latitude", "longitude")}),
+    )
+
+    def has_add_permission(self, request):
+        # Singleton : on empêche d'en créer une deuxième depuis l'admin
+        return not SiteConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Annonce)
+class AnnonceAdmin(admin.ModelAdmin):
+    list_display = ("message", "actif", "date_debut", "date_fin", "statut_visible")
+    list_filter = ("actif",)
+    search_fields = ("message",)
+
+    @admin.display(description="Visible actuellement", boolean=True)
+    def statut_visible(self, obj):
+        return obj.est_visible()
+
+
+
+=== ./core/apps.py ===
+from django.apps import AppConfig
+
+
+class CoreConfig(AppConfig):
+    name = 'core'
+
+
+
+=== ./core/chatbot.py ===
+"""
+Chatbot du site (widget flottant), via Gemini.
+
+Point unique de changement pour l'appel IA — même principe que
+`abonnements/ia_relance.py`. Le contexte envoyé au modèle est reconstruit
+à chaque appel depuis la base (SiteConfig, Plan, Programme) pour que le
+chatbot ne réponde jamais avec des tarifs ou horaires obsolètes.
+
+Ne lève jamais d'exception vers l'appelant : si la clé API est absente ou
+l'appel échoue, renvoie un message de repli invitant à contacter le staff
+sur WhatsApp plutôt que de casser le widget.
+"""
+import logging
+
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+# Limite de messages par visiteur par jour (stockée en session), pour
+# contenir le coût API — pas une vraie mesure de sécurité anti-abus.
+LIMITE_MESSAGES_PAR_JOUR = 20
+
+# Nombre d'échanges (user + assistant) conservés dans l'historique de
+# session, pour garder le contexte court et donc le coût par appel bas.
+MAX_TOURS_HISTORIQUE = 6
+
+MESSAGE_REPLI = (
+    "Désolé, je ne suis pas disponible pour le moment. "
+    "Écris-nous directement sur WhatsApp, on te répond au plus vite !"
+)
+
+
+def _contexte_site() -> str:
+    """Construit le contexte factuel (tarifs, horaires, programme phare...)
+    injecté dans le prompt système, pour que le chatbot ne réponde qu'à
+    partir de données réelles et à jour — jamais de mémoire/invention."""
+    from abonnements.models import Plan
+    from coaching.models import Programme
+    from core.models import SiteConfig
+
+    config = SiteConfig.get_solo()
+
+    lignes_plans = []
+    for plan in Plan.objects.filter(actif=True).order_by("ordre_affichage"):
+        lignes_plans.append(f"- {plan.nom} : {plan.prix_affiche()} ({plan.description_courte})")
+    plans_texte = "\n".join(lignes_plans) or "Aucune formule active pour le moment."
+
+    programme_phare = Programme.objects.filter(est_phare=True, actif=True).first()
+    programme_texte = (
+        f"{programme_phare.titre} — {programme_phare.accroche} (durée : {programme_phare.duree})"
+        if programme_phare else "Aucun programme phare actuellement mis en avant."
+    )
+
+    return (
+        f"Nom de la salle : {config.nom}\n"
+        f"Slogan : {config.slogan}\n"
+        f"Horaires : {config.horaires_texte}\n"
+        f"Localisation : {config.adresse_zone} — {config.adresse_reperes}\n"
+        f"WhatsApp : {config.whatsapp_numero_1} ou {config.whatsapp_numero_2}\n\n"
+        f"Formules tarifaires actives :\n{plans_texte}\n\n"
+        f"Programme phare : {programme_texte}"
+    )
+
+
+def _instructions_systeme() -> str:
+    return (
+        "Tu es l'assistant du site web de T-GYM, une salle de sport au Bénin. "
+        "Tu réponds en français, sur un ton chaleureux et motivant, en 2 à 4 "
+        "phrases maximum (c'est un widget de chat, pas un article).\n\n"
+        "Règles strictes :\n"
+        "- N'utilise QUE les informations fournies ci-dessous (tarifs, horaires, "
+        "localisation, programme). N'invente jamais un prix, un horaire ou une "
+        "adresse qui n'y figure pas.\n"
+        "- Tu ne donnes aucun conseil médical, nutritionnel ou d'entraînement "
+        "personnalisé (blessure, régime, pathologie) — pour ça, redirige "
+        "toujours vers un coach de la salle.\n"
+        "- Pour une inscription, une question sur un compte existant, ou tout "
+        "ce qui nécessite une action humaine, redirige vers WhatsApp.\n"
+        "- Si la question sort du cadre de T-GYM (hors-sujet), dis poliment "
+        "que tu ne peux répondre qu'aux questions sur la salle.\n\n"
+        f"Informations à jour sur T-GYM :\n{_contexte_site()}"
+    )
+
+
+def obtenir_reponse(historique: list[dict], message: str) -> str:
+    """
+    historique : liste de {"role": "user"|"model", "text": "..."} (déjà
+    tronquée par l'appelant à MAX_TOURS_HISTORIQUE échanges).
+    Retourne toujours une chaîne affichable — jamais d'exception.
+    """
+    api_key = getattr(settings, "GEMINI_API_KEY", "")
+    if not api_key:
+        logger.info("GEMINI_API_KEY absente — chatbot indisponible, message de repli renvoyé.")
+        return MESSAGE_REPLI
+
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            "gemini-1.5-flash",
+            system_instruction=_instructions_systeme(),
+        )
+        contenu_historique = [
+            {"role": tour["role"], "parts": [tour["text"]]} for tour in historique
+        ]
+        chat = model.start_chat(history=contenu_historique)
+        response = chat.send_message(message)
+        texte = (response.text or "").strip()
+        return texte or MESSAGE_REPLI
+    except Exception:
+        logger.exception("Échec de l'appel Gemini pour le chatbot du site.")
+        return MESSAGE_REPLI
+
+
+=== ./core/context_processors.py ===
+from actualites.models import Actualite
+from coaching.models import Programme
+from core.models import Annonce, SiteConfig
+
+
+def site_config(request):
+    """
+    Injecte la config du site, l'annonce active, le programme phare et
+    l'actualité mise en avant dans le contexte de CHAQUE template, comme
+    'active_theme' le fait sur akem_fs.
+    """
+    annonce_active = (
+        Annonce.objects.filter(actif=True).order_by("-date_debut").first()
+    )
+    if annonce_active and not annonce_active.est_visible():
+        annonce_active = None
+
+    programme_phare = Programme.objects.filter(actif=True, est_phare=True).first()
+
+    actualite_phare = (
+        Actualite.objects.filter(est_publiee=True, is_featured=True)
+        .order_by("-date_publication")
+        .first()
+    )
+
+    return {
+        "site_config": SiteConfig.get_solo(),
+        "annonce_active": annonce_active,
+        "programme_phare": programme_phare,
+        "actualite_phare": actualite_phare,
+    }
+
+
+
+=== ./core/management/__init__.py ===
+
+
+=== ./core/management/commands/__init__.py ===
+
+
+=== ./core/management/commands/seed_tgym.py ===
+from django.core.management.base import BaseCommand
+
+from abonnements.models import Plan
+from actualites.models import Actualite
+from coaching.models import Programme
+from core.models import Annonce, SiteConfig
+
+
+class Command(BaseCommand):
+    help = "Charge les données réelles T-GYM (config, plans, annonce de démo)."
+
+    def handle(self, *args, **options):
+        config = SiteConfig.get_solo()
+        config.nom = "T-GYM"
+        config.slogan = "La référence du sport."
+        config.horaires_texte = "Ouvert 7j/7 (du Lundi au Dimanche) de 07h00 à 21h00"
+        config.whatsapp_numero_1 = "94140535"
+        config.whatsapp_numero_2 = "63404995"
+        config.facebook_url = "https://facebook.com/tgymbenin"
+        config.instagram_url = "https://instagram.com/tgymbenin"
+        config.adresse_zone = "Abomey-Calavi, tronçon Carrefour TOKAN - Carrefour HOUÈTÔ"
+        config.adresse_reperes = "À gauche en quittant le carrefour Tokan, ou à droite en quittant le carrefour Houètô."
+        config.save()
+        self.stdout.write(self.style.SUCCESS("SiteConfig mise à jour."))
+
+        Plan.objects.all().delete()
+        Plan.objects.create(
+            nom="Premium",
+            categorie=Plan.Categorie.PREMIUM,
+            prix_fcfa=25000,
+            periode="/ mois",
+            description_courte="Tout compris",
+            inclus=[
+                "Accès salle",
+                "Suivi coach permanent",
+                "Contrôle de résultat",
+                "Accompagnement nutritionnel",
+            ],
+            is_populaire=True,
+            ordre_affichage=1,
+        )
+        Plan.objects.create(
+            nom="14 séances / mois",
+            categorie=Plan.Categorie.FLEXIBLE,
+            prix_fcfa=15000,
+            periode="",
+            description_courte="14 séances dans le mois",
+            ordre_affichage=2,
+        )
+        Plan.objects.create(
+            nom="2 séances / semaine",
+            categorie=Plan.Categorie.FLEXIBLE,
+            prix_fcfa=10000,
+            periode="",
+            description_courte="2 séances par semaine",
+            ordre_affichage=3,
+        )
+        Plan.objects.create(
+            nom="1 séance / semaine",
+            categorie=Plan.Categorie.FLEXIBLE,
+            prix_fcfa=5000,
+            periode="",
+            description_courte="1 séance par semaine",
+            ordre_affichage=4,
+        )
+        self.stdout.write(self.style.SUCCESS("4 formules tarifaires créées."))
+
+        Annonce.objects.get_or_create(
+            message="Nouveau programme : 45 jours pour maigrir — places limitées, inscrivez-vous sur WhatsApp !",
+            defaults={"actif": True},
+        )
+        self.stdout.write(self.style.SUCCESS("Annonce de démo créée."))
+
+        Programme.objects.update_or_create(
+            slug="45-jours-pour-maigrir",
+            defaults=dict(
+                titre="45 jours pour maigrir",
+                accroche="Un accompagnement intensif combinant entraînement ciblé, nutrition dynamique et suivi psychologique pour des résultats visibles et durables.",
+                duree="45 jours",
+                objectif=(
+                    "Perdre du poids durablement en combinant les 3 piliers de la méthode T-GYM : "
+                    "des séances rigoureusement encadrées par un coach professionnel, un rééquilibrage "
+                    "alimentaire progressif basé sur la variété des fruits et légumes, et un suivi "
+                    "psychologique disponible même à domicile pour tenir sur la durée."
+                ),
+                inclus=[
+                    "Suivi coach quotidien",
+                    "Plan nutritionnel évolutif",
+                    "Assistance psychologique à distance",
+                    "Contrôle de résultat régulier",
+                ],
+                prix_note="Inclus dans l'abonnement Premium — contactez-nous pour les modalités hors abonnement.",
+                est_phare=True,
+                actif=True,
+                ordre_affichage=1,
+            ),
+        )
+        self.stdout.write(self.style.SUCCESS("Programme phare '45 jours pour maigrir' créé."))
+
+        Actualite.objects.update_or_create(
+            slug="bienvenue-sur-le-nouveau-site-t-gym",
+            defaults=dict(
+                titre="Bienvenue sur le nouveau site T-GYM",
+                categorie="actu_salle",
+                accroche="Découvrez nos formules, notre programme phare et toute l'actu de la salle, désormais en ligne.",
+                corps=(
+                    "T-GYM lance son site officiel ! Vous pouvez désormais consulter nos formules "
+                    "d'abonnement, découvrir le programme \"45 jours pour maigrir\" et nous contacter "
+                    "directement sur WhatsApp en un clic.\n\n"
+                    "Cette page Actualités sera mise à jour régulièrement avec des conseils, les "
+                    "résultats de nos adhérents et les temps forts de la salle. Revenez souvent !"
+                ),
+                is_featured=True,
+                est_publiee=True,
+            ),
+        )
+        self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
+        self.stdout.write(self.style.SUCCESS("Seed terminé."))
+
+
+
+=== ./core/models.py ===
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils import timezone
+
+
+class SiteConfig(models.Model):
+    """
+    Configuration globale du site (singleton — une seule ligne en base).
+    Modifiable depuis l'admin sans toucher au code : contacts, horaires, réseaux.
+    """
+    nom = models.CharField("Nom de la salle", max_length=100, default="T-GYM")
+    slogan = models.CharField("Slogan", max_length=200, default="La référence du sport.")
+
+    horaires_texte = models.CharField(
+        "Horaires (affichage)",
+        max_length=150,
+        default="Ouvert 7j/7 (du Lundi au Dimanche) de 07h00 à 21h00",
+    )
+
+    whatsapp_numero_1 = models.CharField("Numéro WhatsApp #1", max_length=20, default="94140535")
+    whatsapp_numero_2 = models.CharField("Numéro WhatsApp #2", max_length=20, default="63404995")
+
+    facebook_url = models.URLField("Lien page Facebook", blank=True, default="https://facebook.com/tgymbenin")
+    instagram_url = models.URLField("Lien page Instagram", blank=True, default="")
+
+    adresse_zone = models.CharField(
+        "Zone", max_length=150, default="Abomey-Calavi, tronçon Carrefour TOKAN - Carrefour HOUÈTÔ"
+    )
+    adresse_reperes = models.CharField(
+        "Repères de direction",
+        max_length=255,
+        default="À gauche en quittant le carrefour Tokan, ou à droite en quittant le carrefour Houètô.",
+    )
+    latitude = models.DecimalField(
+        "Latitude GPS", max_digits=10, decimal_places=7, null=True, blank=True,
+        help_text="Ex: 6.4483. Laisser vide si inconnu — le lien Maps utilisera l'adresse texte à la place.",
+    )
+    longitude = models.DecimalField(
+        "Longitude GPS", max_digits=10, decimal_places=7, null=True, blank=True,
+        help_text="Ex: 2.3548",
+    )
+
+    def google_maps_url(self) -> str:
+        """
+        Lien direct vers Google Maps — pas d'API, pas de clé, pas de
+        permission de géolocalisation demandée au visiteur. Un clic
+        ouvre Maps avec le point exact (ou l'adresse en fallback).
+        """
+        if self.latitude is not None and self.longitude is not None:
+            query = f"{self.latitude},{self.longitude}"
+        else:
+            query = f"{self.nom} {self.adresse_zone}"
+        from urllib.parse import quote
+        return f"https://www.google.com/maps/search/?api=1&query={quote(str(query))}"
+
+    def clean(self):
+        # Empêche la création d'une deuxième ligne (pattern singleton)
+        if not self.pk and SiteConfig.objects.exists():
+            raise ValidationError("Une configuration du site existe déjà. Modifiez-la plutôt que d'en créer une nouvelle.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Configuration — {self.nom}"
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    class Meta:
+        verbose_name = "Configuration du site"
+        verbose_name_plural = "Configuration du site"
+
+
+class Annonce(models.Model):
+    """
+    Bandeau coulissant ("Top Body"). Le staff peut publier/dépublier une actu,
+    un changement d'horaire ou une promo flash sans toucher au code.
+    """
+    message = models.CharField("Message", max_length=200)
+    lien = models.URLField("Lien (optionnel)", blank=True)
+    actif = models.BooleanField("Actif", default=True)
+    date_debut = models.DateTimeField("Début d'affichage", default=timezone.now)
+    date_fin = models.DateTimeField("Fin d'affichage", null=True, blank=True)
+
+    def est_visible(self):
+        if not self.actif:
+            return False
+        now = timezone.now()
+        if self.date_debut and now < self.date_debut:
+            return False
+        if self.date_fin and now > self.date_fin:
+            return False
+        return True
+
+    def __str__(self):
+        return self.message
+
+    class Meta:
+        verbose_name = "Annonce (bandeau)"
+        verbose_name_plural = "Annonces (bandeau)"
+        ordering = ["-date_debut"]
+
+
+
+=== ./core/templates/core/accueil.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hero">
+    <div class="container">
+        <h1>{{ site_config.nom }}</h1>
+        <p class="slogan">{{ site_config.slogan|upper }}</p>
+        <p class="accroche">Une présence physique incontournable, désormais propulsée par un écosystème digital.</p>
+
+        <div class="hero-hours">
+            <div>
+                <strong>Ouvert 7j/7 — Du Lundi au Dimanche</strong>
+                <span>{{ site_config.horaires_texte }}</span>
+            </div>
+        </div>
+        <br>
+        <a href="{{ contact_link }}" class="btn btn-primary" target="_blank" rel="noopener">Nous contacter sur WhatsApp</a>
+        <a href="{% url 'core:tarifs' %}" class="btn btn-outline">Voir les tarifs</a>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">La méthode T-GYM</p>
+        <h2>Plus qu'une salle, un accompagnement à 360°</h2>
+        <div class="grid-3">
+            <div class="card">
+                <div class="card-icon">🏋️</div>
+                <h3>Physique</h3>
+                <p>Des exercices dûment sélectionnés par un coach professionnel pour maximiser les résultats dans un délai court.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">🍎</div>
+                <h3>Nutritionnel</h3>
+                <p>Un plan de rééquilibrage alimentaire évolutif, adapté aux habitudes de l'adhérent pour éviter la monotonie.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">🧠</div>
+                <h3>Psychologique</h3>
+                <p>Une assistance mentale pour surmonter l'effort, disponible même à domicile.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% if programme_phare %}
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Programme phare</p>
+        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
+        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
+        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
+    </div>
+</section>
+{% endif %}
+
+{% if plan_populaire %}
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Formule la plus choisie</p>
+        <h2>{{ plan_populaire.nom }} — {{ plan_populaire.prix_affiche }}</h2>
+        <a href="{% url 'core:tarifs' %}" class="btn btn-primary">Voir toutes les formules</a>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+
+
+=== ./core/templates/core/methode.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">La méthode T-GYM</p>
+        <h2 style="color:var(--white);">Plus qu'une salle, un accompagnement à 360°</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container grid-3">
+        <div class="card">
+            <div class="card-icon">🏋️</div>
+            <h3>Entraînement ciblé</h3>
+            <p>Des exercices rigoureusement sélectionnés par un coach professionnel pour maximiser les résultats rapidement.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">🍎</div>
+            <h3>Nutrition dynamique</h3>
+            <p>Un rééquilibrage alimentaire évolutif basé sur la variation des fruits et légumes, adapté aux habitudes de l'adhérent pour que manger sainement ne devienne pas une corvée.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">🧠</div>
+            <h3>Suivi psychologique & à distance</h3>
+            <p>Une assistance mentale pour surmonter l'effort, avec un suivi disponible même à domicile pour répondre aux doutes de l'adhérent.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section section--grey">
+    <div class="container">
+        <p class="eyebrow">Contrôle qualité</p>
+        <h2>Des bilans réguliers, des résultats mesurés</h2>
+        <p style="max-width:600px;">Un contrôle régulier des résultats permet d'évaluer la productivité de chaque abonné et d'ajuster l'accompagnement en continu.</p>
+    </div>
+</section>
+
+{% if programme_phare %}
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Programme phare</p>
+        <h2 style="color:var(--white);">{{ programme_phare.titre }}</h2>
+        <p style="color:var(--grey); max-width:600px;">{{ programme_phare.accroche }}</p>
+        <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">Je m'intéresse au programme</a>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+
+
+=== ./core/templates/core/ou_nous_trouver.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Implantation & accessibilité</p>
+        <h2 style="color:var(--white);">Un ancrage géographique fort à Calavi</h2>
+
+        <div class="grid-2" style="align-items:start; margin-top:2rem;">
+            <div>
+                <div class="card" style="margin-bottom:1rem;">
+                    <h3 style="color:var(--yellow);">Situation</h3>
+                    <p>{{ site_config.adresse_zone }}, juste sous les lignes haute tension.</p>
+                </div>
+                <div class="card" style="margin-bottom:1rem;">
+                    <h3 style="color:var(--yellow);">Repères visuels</h3>
+                    <p>{{ site_config.adresse_reperes }}</p>
+                </div>
+                <div class="card">
+                    <h3 style="color:var(--yellow);">Signalétique</h3>
+                    <p>Une grande infrastructure peinte en jaune et noir, immédiatement reconnaissable.</p>
+                </div>
+            </div>
+
+            <div>
+                <div class="card" style="min-height:280px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:1.25rem;">
+                    <div style="font-size:3rem;">📍</div>
+                    <div>
+                        <h3 style="color:var(--yellow); margin:0 0 0.4rem;">{{ site_config.nom }}</h3>
+                        <p style="margin:0;">{{ site_config.adresse_zone }}</p>
+                    </div>
+                    <a href="{{ site_config.google_maps_url }}" class="btn btn-primary" target="_blank" rel="noopener">Ouvrir dans Google Maps</a>
+                </div>
+                <br>
+                <a href="{{ contact_link }}" class="btn btn-outline" target="_blank" rel="noopener">Demander l'itinéraire sur WhatsApp</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./core/templates/core/tarifs.html ===
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section">
+    <div class="container">
+        <p class="eyebrow">Pricing</p>
+        <h2>Des offres claires pour chaque profil</h2>
+
+        <div class="grid-2" style="align-items:start;">
+            <div>
+                {% for plan in plans_premium %}
+                <div class="plan-premium">
+                    <p class="eyebrow">Abonnement standard</p>
+                    <h3 style="font-size:1.4rem; margin:0 0 1rem;">{{ plan.nom }}</h3>
+                    <p class="price">{{ plan.prix_fcfa|floatformat:0 }} <small>FCFA {{ plan.periode }}</small></p>
+                    {% if plan.inclus %}
+                    <ul>
+                        {% for item in plan.inclus %}
+                        <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    <a href="{{ plan.whatsapp_link }}" class="btn btn-primary" target="_blank" rel="noopener">S'inscrire via WhatsApp</a>
+                </div>
+                {% empty %}
+                <p>Formule Premium bientôt disponible.</p>
+                {% endfor %}
+            </div>
+
+            <div>
+                <p class="eyebrow">Formules flexibles</p>
+                <h3 style="margin:0 0 1rem;">À la carte</h3>
+                {% for plan in plans_flexibles %}
+                <div class="plan-flex">
+                    <div>
+                        <p class="price">{{ plan.prix_fcfa|floatformat:0 }} <small>FCFA</small></p>
+                        <p class="desc">{{ plan.description_courte }}</p>
+                    </div>
+                    <a href="{{ plan.whatsapp_link }}" class="btn btn-outline" target="_blank" rel="noopener">S'inscrire</a>
+                </div>
+                {% empty %}
+                <p>Formules flexibles bientôt disponibles.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+
+=== ./core/tests.py ===
+import json
+from datetime import timedelta
+from unittest.mock import patch
+
+from django.test import TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
+
+from abonnements.models import Plan
+from coaching.models import Programme
+from core.models import Annonce, SiteConfig
+from core.whatsapp import (
+    build_generic_whatsapp_link,
+    build_plan_whatsapp_link,
+    build_whatsapp_link,
+    numero_international,
+)
+
+
+class SiteConfigModelTests(TestCase):
+    def test_get_solo_cree_une_seule_ligne(self):
+        config1 = SiteConfig.get_solo()
+        config2 = SiteConfig.get_solo()
+        self.assertEqual(config1.pk, config2.pk)
+        self.assertEqual(SiteConfig.objects.count(), 1)
+
+    def test_impossible_de_creer_une_deuxieme_config(self):
+        SiteConfig.get_solo()
+        with self.assertRaises(Exception):
+            SiteConfig.objects.create(nom="Autre salle")
+
+    def test_google_maps_url_fallback_sur_adresse_si_pas_de_gps(self):
+        config = SiteConfig.get_solo()
+        config.latitude = None
+        config.longitude = None
+        config.adresse_zone = "Abomey-Calavi, tronçon Carrefour TOKAN - Carrefour HOUÈTÔ"
+        url = config.google_maps_url()
+        self.assertIn("google.com/maps/search", url)
+        self.assertIn("Abomey-Calavi", url)
+
+    def test_google_maps_url_utilise_les_coordonnees_gps_si_presentes(self):
+        config = SiteConfig.get_solo()
+        config.latitude = 6.4483
+        config.longitude = 2.3548
+        url = config.google_maps_url()
+        self.assertIn("6.4483", url)
+        self.assertIn("2.3548", url)
+
+
+class AnnonceModelTests(TestCase):
+    def test_annonce_active_sans_dates_est_visible(self):
+        annonce = Annonce.objects.create(message="Promo", actif=True)
+        self.assertTrue(annonce.est_visible())
+
+    def test_annonce_inactive_nest_jamais_visible(self):
+        annonce = Annonce.objects.create(message="Promo", actif=False)
+        self.assertFalse(annonce.est_visible())
+
+    def test_annonce_pas_encore_commencee_nest_pas_visible(self):
+        annonce = Annonce.objects.create(
+            message="Promo future", actif=True,
+            date_debut=timezone.now() + timedelta(days=1),
+        )
+        self.assertFalse(annonce.est_visible())
+
+    def test_annonce_expiree_nest_pas_visible(self):
+        annonce = Annonce.objects.create(
+            message="Promo passée", actif=True,
+            date_debut=timezone.now() - timedelta(days=10),
+            date_fin=timezone.now() - timedelta(days=1),
+        )
+        self.assertFalse(annonce.est_visible())
+
+
+class WhatsappLinkBuilderTests(TestCase):
+    def test_numero_international_ajoute_le_prefixe_229(self):
+        self.assertEqual(numero_international("94140535"), "22994140535")
+
+    def test_numero_international_conserve_prefixe_deja_present(self):
+        self.assertEqual(numero_international("22994140535"), "22994140535")
+
+    def test_numero_international_retire_le_plus(self):
+        self.assertEqual(numero_international("+22994140535"), "22994140535")
+
+    def test_numero_international_retire_les_espaces(self):
+        self.assertEqual(numero_international("94 14 05 35"), "22994140535")
+
+    def test_build_whatsapp_link_encode_le_message(self):
+        lien = build_whatsapp_link("Bonjour, ça va ?", numero="94140535")
+        self.assertTrue(lien.startswith("https://wa.me/22994140535?text="))
+        self.assertIn("Bonjour", lien)
+
+    def test_build_generic_whatsapp_link_avec_sujet(self):
+        lien = build_generic_whatsapp_link("la méthode T-GYM")
+        self.assertIn("wa.me", lien)
+        self.assertIn("m%C3%A9thode", lien)  # "méthode" encodé
+
+    def test_build_generic_whatsapp_link_sans_sujet(self):
+        lien = build_generic_whatsapp_link()
+        self.assertIn("wa.me", lien)
+
+    def test_build_plan_whatsapp_link_contient_le_nom_et_prix(self):
+        plan = Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois")
+        lien = build_plan_whatsapp_link(plan)
+        self.assertIn("wa.me", lien)
+        self.assertIn("Premium", lien)
+
+
+class PagesPubliquesTests(TestCase):
+    """Pages qui ne doivent jamais casser (Phase 1 + 1.5 + 2)."""
+
+    def test_accueil_200(self):
+        resp = self.client.get(reverse("core:accueil"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_methode_200(self):
+        resp = self.client.get(reverse("core:methode"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_tarifs_200(self):
+        resp = self.client.get(reverse("core:tarifs"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_ou_nous_trouver_200(self):
+        resp = self.client.get(reverse("core:ou_nous_trouver"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_accueil_affiche_le_plan_populaire(self):
+        Plan.objects.create(nom="Premium", prix_fcfa=25000, periode="/ mois", is_populaire=True, actif=True)
+        resp = self.client.get(reverse("core:accueil"))
+        self.assertContains(resp, "Premium")
+
+    def test_accueil_affiche_le_programme_phare(self):
+        Programme.objects.create(
+            titre="45 jours pour maigrir", accroche="Résultats rapides",
+            duree="45 jours", objectif="Perdre du poids", est_phare=True, actif=True,
+        )
+        resp = self.client.get(reverse("core:accueil"))
+        self.assertContains(resp, "45 jours pour maigrir")
+
+    def test_bandeau_annonce_prioritaire_sur_actualite_phare(self):
+        from actualites.models import Actualite
+
+        Annonce.objects.create(message="Promo du bandeau", actif=True)
+        Actualite.objects.create(
+            titre="Une actu vedette", accroche="...", corps="...",
+            is_featured=True, est_publiee=True,
+        )
+        resp = self.client.get(reverse("core:accueil"))
+        self.assertContains(resp, "Promo du bandeau")
+        self.assertNotContains(resp, "Top Body News")
+
+    def test_bandeau_actualite_phare_si_pas_dannonce_active(self):
+        from actualites.models import Actualite
+
+        Actualite.objects.create(
+            titre="Une actu vedette", accroche="...", corps="...",
+            is_featured=True, est_publiee=True,
+        )
+        resp = self.client.get(reverse("core:accueil"))
+        self.assertContains(resp, "Top Body News")
+        self.assertContains(resp, "Une actu vedette")
+
+
+class ChatbotMessageViewTests(TestCase):
+    def setUp(self):
+        self.url = reverse("core:chatbot_message")
+
+    def _post(self, message):
+        return self.client.post(
+            self.url, data=json.dumps({"message": message}),
+            content_type="application/json",
+        )
+
+    def test_get_refuse_405(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 405)
+
+    def test_message_vide_refuse_400(self):
+        resp = self._post("")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_corps_non_json_refuse_400(self):
+        resp = self.client.post(self.url, data="pas du json", content_type="application/json")
+        self.assertEqual(resp.status_code, 400)
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_sans_cle_api_renvoie_le_message_de_repli(self):
+        resp = self._post("Bonjour, vous êtes ouverts le dimanche ?")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("WhatsApp", data["reponse"])
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_limite_journaliere_atteinte_au_21e_message(self):
+        # Même session (même client) réutilisée à chaque appel -> le compteur
+        # en session doit s'incrémenter normalement (comportement voulu,
+        # même si contournable par rotation de session — voir PROGRESS.md).
+        for _ in range(20):
+            resp = self._post("test")
+            self.assertNotIn("limite_atteinte", resp.json())
+        resp_21 = self._post("test de trop")
+        data = resp_21.json()
+        self.assertTrue(data.get("limite_atteinte"))
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_message_trop_long_est_tronque_sans_erreur(self):
+        resp = self._post("a" * 1000)
+        self.assertEqual(resp.status_code, 200)
+
+    @override_settings(GEMINI_API_KEY="fake-key-pour-le-test")
+    @patch("core.views.obtenir_reponse")
+    def test_reponse_gemini_mockee_est_bien_renvoyee(self, mock_obtenir_reponse):
+        mock_obtenir_reponse.return_value = "Réponse générée par Gemini (mock)."
+        resp = self._post("Quels sont vos tarifs ?")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["reponse"], "Réponse générée par Gemini (mock).")
+
+=== ./core/urls.py ===
+from django.urls import path
+
+from . import views
+
+app_name = "core"
+
+urlpatterns = [
+    path("", views.accueil, name="accueil"),
+    path("methode/", views.methode, name="methode"),
+    path("tarifs/", views.tarifs, name="tarifs"),
+    path("ou-nous-trouver/", views.ou_nous_trouver, name="ou_nous_trouver"),
+    path("chatbot/message/", views.chatbot_message, name="chatbot_message"),
+]
+
+
+
+=== ./core/views.py ===
+import json
+from datetime import date
+
+from django.http import JsonResponse
+from django.shortcuts import render
+from django.views.decorators.http import require_POST
+
+from abonnements.models import Plan
+from core.chatbot import LIMITE_MESSAGES_PAR_JOUR, MAX_TOURS_HISTORIQUE, obtenir_reponse
+from core.whatsapp import build_generic_whatsapp_link, build_plan_whatsapp_link
+
+
+def accueil(request):
+    plans = Plan.objects.filter(actif=True)
+    plan_populaire = plans.filter(is_populaire=True).first()
+    contact_link = build_generic_whatsapp_link()
+    return render(request, "core/accueil.html", {
+        "plan_populaire": plan_populaire,
+        "contact_link": contact_link,
+    })
+
+
+def methode(request):
+    contact_link = build_generic_whatsapp_link("la méthode T-GYM")
+    return render(request, "core/methode.html", {"contact_link": contact_link})
+
+
+def tarifs(request):
+    plans = Plan.objects.filter(actif=True)
+    plans_premium = plans.filter(categorie=Plan.Categorie.PREMIUM)
+    plans_flexibles = plans.filter(categorie=Plan.Categorie.FLEXIBLE)
+
+    # On pré-calcule le lien WhatsApp de chaque plan (pas de logique dans le template)
+    for plan in list(plans_premium) + list(plans_flexibles):
+        plan.whatsapp_link = build_plan_whatsapp_link(plan)
+
+    return render(request, "core/tarifs.html", {
+        "plans_premium": plans_premium,
+        "plans_flexibles": plans_flexibles,
+    })
+
+
+def ou_nous_trouver(request):
+    contact_link = build_generic_whatsapp_link("comment vous trouver")
+    return render(request, "core/ou_nous_trouver.html", {"contact_link": contact_link})
+
+
+@require_POST
+def chatbot_message(request):
+    """
+    Point d'entrée du widget de chat. Aucune donnée de conversation n'est
+    stockée en base — tout vit dans la session (vidé à la fermeture du
+    navigateur ou à l'expiration de session), par simplicité et pour ne
+    pas conserver de données personnelles sans nécessité.
+
+    L'historique envoyé à Gemini vient TOUJOURS de la session serveur,
+    jamais du client — un visiteur ne peut donc pas injecter de faux
+    tours de conversation dans le prompt.
+    """
+    try:
+        donnees = json.loads(request.body)
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({"erreur": "Requête invalide."}, status=400)
+
+    message = (donnees.get("message") or "").strip()
+    if not message:
+        return JsonResponse({"erreur": "Message vide."}, status=400)
+    if len(message) > 500:
+        message = message[:500]
+
+    aujourdhui = date.today().isoformat()
+    compteur = request.session.get("chatbot_compteur", {})
+    if compteur.get("date") != aujourdhui:
+        compteur = {"date": aujourdhui, "nombre": 0}
+
+    if compteur["nombre"] >= LIMITE_MESSAGES_PAR_JOUR:
+        return JsonResponse({
+            "reponse": "Tu as atteint la limite de messages pour aujourd'hui. "
+                       "Écris-nous directement sur WhatsApp pour continuer !",
+            "limite_atteinte": True,
+        })
+
+    historique = request.session.get("chatbot_historique", [])
+    reponse = obtenir_reponse(historique, message)
+
+    historique.append({"role": "user", "text": message})
+    historique.append({"role": "model", "text": reponse})
+    request.session["chatbot_historique"] = historique[-(MAX_TOURS_HISTORIQUE * 2):]
+
+    compteur["nombre"] += 1
+    request.session["chatbot_compteur"] = compteur
+
+    return JsonResponse({"reponse": reponse})
+
+
+
+=== ./core/whatsapp.py ===
+"""
+Générateur de liens WhatsApp pré-remplis (wa.me).
+
+Principe : c'est TOUJOURS le visiteur qui clique et envoie — aucun message
+n'est expédié automatiquement par le serveur. Ce module ne fait que
+construire l'URL ; il ne touche à aucune API d'envoi.
+"""
+from urllib.parse import quote
+
+from core.models import SiteConfig
+
+
+def _numero_par_defaut() -> str:
+    config = SiteConfig.get_solo()
+    return config.whatsapp_numero_1
+
+
+def numero_international(numero: str) -> str:
+    """
+    Convertit un numéro local béninois (ex: '94140535') au format
+    international sans '+' (ex: '22994140535'), requis aussi bien par les
+    liens wa.me que par l'API WhatsApp Business Cloud.
+    Ne touche pas aux numéros déjà préfixés par un indicatif.
+    """
+    numero = numero.strip().replace(" ", "").replace("-", "")
+    if numero.startswith("+"):
+        numero = numero[1:]
+    if numero.startswith("229"):
+        return numero
+    return f"229{numero}"
+
+
+# Alias interne conservé pour ne pas casser le reste de ce module.
+_normaliser_numero = numero_international
+
+
+def build_whatsapp_link(message: str, numero: str | None = None) -> str:
+    """
+    Construit un lien wa.me avec un message pré-rempli et encodé.
+    """
+    numero_cible = _normaliser_numero(numero or _numero_par_defaut())
+    return f"https://wa.me/{numero_cible}?text={quote(message)}"
+
+
+def build_plan_whatsapp_link(plan, nom_client: str = "") -> str:
+    """
+    Message pré-rempli pour une inscription à un plan tarifaire donné.
+    """
+    if nom_client:
+        message = (
+            f"Bonjour, je suis {nom_client} et je souhaite m'inscrire "
+            f"à la formule « {plan.nom} » ({plan.prix_affiche()})."
+        )
+    else:
+        message = (
+            f"Bonjour, je souhaite m'inscrire à la formule « {plan.nom} » "
+            f"({plan.prix_affiche()})."
+        )
+    return build_whatsapp_link(message)
+
+
+def build_generic_whatsapp_link(sujet: str = "") -> str:
+    """
+    Message pré-rempli générique (contact / question), utilisé par le
+    hub WhatsApp quand la demande ne concerne pas un plan précis.
+    """
+    if sujet:
+        message = f"Bonjour, j'ai une question à propos de : {sujet}."
+    else:
+        message = "Bonjour, j'aimerais avoir plus d'informations sur T-GYM."
+    return build_whatsapp_link(message)
+
+
+
+=== ./manage.py ===
+#!/usr/bin/env python
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+
+def main():
+    """Run administrative tasks."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+=== ./requirements.txt ===
+Django>=4.2,<5
+Pillow>=10.0
+google-generativeai>=0.7,<1.0
+requests>=2.31,<3.0
+python-dotenv>=1.0,<2.0
+
+
+
+=== ./static/css/theme.css ===
+:root {
+  --black: #0d0d0d;
+  --black-soft: #1a1a1a;
+  --card: #232323;
+  --yellow: #f5c400;
+  --yellow-deep: #c99a00;
+  --white: #ffffff;
+  --grey: #b8b8b8;
+  --grey-dark: #8a8a8a;
+  --grey-light: #f7f7f7;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--white);
+  color: var(--black);
+  line-height: 1.5;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---------- Bandeau coulissant ("Top Body") ---------- */
+.top-bar {
+  background: var(--yellow);
+  color: var(--black);
+  font-weight: 700;
+  font-size: 0.85rem;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0.5rem 0;
+}
+.top-bar__track {
+  display: inline-block;
+  padding-left: 100%;
+  animation: scroll-left 18s linear infinite;
+}
+.top-bar a { text-decoration: underline; }
+@keyframes scroll-left {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-bar__track { animation: none; padding-left: 1.25rem; }
+}
+
+/* ---------- Header ---------- */
+.header {
+  background: var(--black);
+  padding: 1rem 0;
+}
+.header__inner { display: flex; align-items: center; justify-content: space-between; }
+.logo { color: var(--yellow); font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; }
+.nav { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.nav a { color: var(--white); font-size: 0.9rem; font-weight: 600; }
+.nav a:hover { color: var(--yellow); }
+.btn-whatsapp-nav {
+  background: var(--yellow);
+  color: var(--black) !important;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-weight: 700 !important;
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  background: var(--black);
+  color: var(--white);
+  padding: 4rem 0 3.5rem;
+}
+.hero h1 {
+  color: var(--yellow);
+  font-size: 3rem;
+  margin: 0 0 0.5rem;
+  font-weight: 800;
+}
+.hero p.slogan { font-size: 1.15rem; font-weight: 700; letter-spacing: 2px; margin: 0 0 1.25rem; }
+.hero p.accroche { color: var(--grey); font-style: italic; max-width: 600px; margin-bottom: 2rem; }
+
+.hero-hours {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  background: var(--black-soft);
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius);
+  margin-bottom: 2rem;
+}
+.hero-hours strong { color: var(--white); display: block; }
+.hero-hours span { color: var(--yellow); font-size: 0.9rem; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-block;
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: 2px solid transparent;
+}
+.btn-primary { background: var(--yellow); color: var(--black); }
+.btn-primary:hover { background: var(--yellow-deep); }
+.btn-outline { border-color: var(--yellow); color: var(--yellow); }
+
+/* ---------- Sections ---------- */
+.section { padding: 3.5rem 0; }
+.section--dark { background: var(--black); color: var(--white); }
+.section--grey { background: var(--grey-light); }
+.eyebrow {
+  color: var(--yellow-deep);
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.section--dark .eyebrow { color: var(--yellow); }
+.section h2 { font-size: 2rem; margin: 0.25rem 0 2rem; }
+
+/* ---------- Cards / grid ---------- */
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+@media (max-width: 800px) {
+  .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 2.1rem; }
+}
+
+.card {
+  background: var(--grey-light);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+}
+.section--dark .card { background: var(--black-soft); }
+.card-icon {
+  width: 50px; height: 50px;
+  background: var(--yellow);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+}
+.card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.card p { color: #444; font-size: 0.92rem; margin: 0; }
+.section--dark .card p { color: var(--grey); }
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.badge--ok { background: var(--yellow); color: var(--black); }
+.badge--warn { background: #fff3cd; color: #7a5b00; }
+.badge--muted { background: #eee; color: #666; }
+
+.table-simple { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+.table-simple th, .table-simple td {
+  text-align: left; padding: 0.5rem 0.6rem; font-size: 0.88rem;
+  border-bottom: 1px solid #eee;
+}
+.table-simple th { color: #777; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+
+/* ---------- Pricing ---------- */
+.plan-premium {
+  background: var(--black);
+  color: var(--white);
+  border-radius: var(--radius);
+  padding: 2rem;
+}
+.plan-premium .eyebrow { color: var(--yellow); }
+.plan-premium .price { font-size: 2.75rem; font-weight: 800; color: var(--yellow); }
+.plan-premium .price small { font-size: 1.1rem; color: var(--white); }
+.plan-premium ul { list-style: none; padding: 0; margin: 1.25rem 0; }
+.plan-premium li { padding: 0.4rem 0; }
+.plan-premium li::before { content: "✔ "; color: var(--yellow); font-weight: 800; }
+
+.plan-flex {
+  background: var(--grey-light);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.plan-flex .price { font-size: 1.5rem; font-weight: 800; }
+.plan-flex .price small { color: var(--yellow-deep); font-weight: 700; font-size: 0.85rem; }
+.plan-flex .desc { color: #555; font-size: 0.9rem; }
+
+/* ---------- Footer ---------- */
+.footer {
+  background: var(--black);
+  color: var(--grey);
+  padding: 2.5rem 0;
+  font-size: 0.85rem;
+}
+.footer strong { color: var(--yellow); }
+.footer a { text-decoration: underline; }
+
+/* ---------- WhatsApp float button ---------- */
+.wa-float {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: var(--yellow);
+  color: var(--black);
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  z-index: 50;
+}
+
+/* ---------- Chatbot widget ---------- */
+.chatbot-toggle {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  background: var(--black);
+  color: var(--yellow);
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: 2px solid var(--yellow);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  z-index: 50;
+}
+
+.chatbot-panel {
+  position: fixed;
+  bottom: 5.5rem;
+  left: 1.5rem;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  height: 420px;
+  max-height: calc(100vh - 8rem);
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 51;
+}
+.chatbot-panel.chatbot-panel--open { display: flex; }
+
+.chatbot-panel__header {
+  background: var(--black);
+  color: var(--white);
+  padding: 0.8rem 1rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.chatbot-panel__header strong { color: var(--yellow); }
+.chatbot-panel__close {
+  background: none; border: none; color: var(--grey); font-size: 1.1rem; cursor: pointer;
+}
+
+.chatbot-panel__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.chatbot-msg {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.chatbot-msg--user {
+  align-self: flex-end;
+  background: var(--yellow);
+  color: var(--black);
+  border-bottom-right-radius: 3px;
+}
+.chatbot-msg--bot {
+  align-self: flex-start;
+  background: var(--grey-light);
+  color: var(--black);
+  border-bottom-left-radius: 3px;
+}
+.chatbot-msg--typing { color: #999; font-style: italic; }
+
+.chatbot-panel__form {
+  display: flex;
+  border-top: 1px solid #eee;
+  padding: 0.6rem;
+  gap: 0.5rem;
+}
+.chatbot-panel__form input {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+}
+.chatbot-panel__form button {
+  background: var(--yellow);
+  color: var(--black);
+  border: none;
+  border-radius: 999px;
+  padding: 0 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chatbot-panel__form button:disabled { opacity: 0.5; cursor: default; }
+
+
+
+=== ./templates/base.html ===
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+</head>
+<body>
+
+    {% if annonce_active %}
+    <div class="top-bar">
+        <div class="top-bar__track">
+            {% if annonce_active.lien %}
+                <a href="{{ annonce_active.lien }}">📢 {{ annonce_active.message }}</a>
+            {% else %}
+                📢 {{ annonce_active.message }}
+            {% endif %}
+        </div>
+    </div>
+    {% elif actualite_phare %}
+    <div class="top-bar">
+        <div class="top-bar__track">
+            <a href="{% url 'actualites:actualite_detail' actualite_phare.slug %}">🔥 Top Body News — {{ actualite_phare.titre }}</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <header class="header">
+        <div class="container header__inner">
+            <a href="{% url 'core:accueil' %}" class="logo">{{ site_config.nom }}</a>
+            <nav class="nav">
+                <a href="{% url 'core:accueil' %}">Accueil</a>
+                <a href="{% url 'core:methode' %}">La Méthode</a>
+                <a href="{% url 'coaching:programmes' %}">Programmes</a>
+                <a href="{% url 'actualites:actualites' %}">Actualités</a>
+                <a href="{% url 'core:tarifs' %}">Tarifs</a>
+                <a href="{% url 'core:ou_nous_trouver' %}">Où nous trouver</a>
+                {% if request.user.is_authenticated %}
+                    <a href="{% url 'comptes:mon_espace' %}">Mon espace</a>
+                {% else %}
+                    <a href="{% url 'comptes:connexion' %}">Connexion</a>
+                {% endif %}
+                <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p><strong>{{ site_config.nom }}</strong> — {{ site_config.slogan }}</p>
+            <p>{{ site_config.horaires_texte }}</p>
+            <p>
+                WhatsApp : {{ site_config.whatsapp_numero_1 }} / {{ site_config.whatsapp_numero_2 }}
+                {% if site_config.facebook_url %}
+                    &nbsp;•&nbsp; <a href="{{ site_config.facebook_url }}" target="_blank" rel="noopener">Facebook</a>
+                {% endif %}
+                {% if site_config.instagram_url %}
+                    &nbsp;•&nbsp; <a href="{{ site_config.instagram_url }}" target="_blank" rel="noopener">Instagram</a>
+                {% endif %}
+            </p>
+            <p>{{ site_config.adresse_zone }}</p>
+        </div>
+    </footer>
+
+    <a class="wa-float" href="{% block wa_float_link %}{{ contact_link|default:'#' }}{% endblock %}" target="_blank" rel="noopener" aria-label="Contacter T-GYM sur WhatsApp">💬</a>
+
+    <button type="button" class="chatbot-toggle" id="chatbot-toggle" aria-label="Ouvrir l'assistant T-GYM">🤖</button>
+    <div class="chatbot-panel" id="chatbot-panel">
+        <div class="chatbot-panel__header">
+            <strong>Assistant T-GYM</strong>
+            <button type="button" class="chatbot-panel__close" id="chatbot-close" aria-label="Fermer">✕</button>
+        </div>
+        <div class="chatbot-panel__messages" id="chatbot-messages">
+            <div class="chatbot-msg chatbot-msg--bot">Salut ! Une question sur nos formules, nos horaires ou le programme phare ? Je suis là 💪</div>
+        </div>
+        <form class="chatbot-panel__form" id="chatbot-form">
+            {% csrf_token %}
+            <input type="text" id="chatbot-input" placeholder="Écris ton message..." maxlength="500" autocomplete="off">
+            <button type="submit" id="chatbot-submit">Envoyer</button>
+        </form>
+    </div>
+
+    <script>
+    (function () {
+        const toggle = document.getElementById('chatbot-toggle');
+        const panel = document.getElementById('chatbot-panel');
+        const closeBtn = document.getElementById('chatbot-close');
+        const form = document.getElementById('chatbot-form');
+        const input = document.getElementById('chatbot-input');
+        const submitBtn = document.getElementById('chatbot-submit');
+        const messages = document.getElementById('chatbot-messages');
+
+        function ouvrir() {
+            panel.classList.add('chatbot-panel--open');
+            input.focus();
+        }
+        function fermer() {
+            panel.classList.remove('chatbot-panel--open');
+        }
+        toggle.addEventListener('click', function () {
+            panel.classList.contains('chatbot-panel--open') ? fermer() : ouvrir();
+        });
+        closeBtn.addEventListener('click', fermer);
+
+        function ajouterMessage(texte, role) {
+            const bulle = document.createElement('div');
+            bulle.className = 'chatbot-msg ' + (role === 'user' ? 'chatbot-msg--user' : 'chatbot-msg--bot');
+            bulle.textContent = texte;
+            messages.appendChild(bulle);
+            messages.scrollTop = messages.scrollHeight;
+            return bulle;
+        }
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const texte = input.value.trim();
+            if (!texte) return;
+
+            ajouterMessage(texte, 'user');
+            input.value = '';
+            input.disabled = true;
+            submitBtn.disabled = true;
+
+            const typing = ajouterMessage('...', 'bot');
+            typing.classList.add('chatbot-msg--typing');
+
+            try {
+                const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
+                const resp = await fetch("{% url 'core:chatbot_message' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({ message: texte }),
+                });
+                const data = await resp.json();
+                typing.remove();
+                ajouterMessage(data.reponse || "Désolé, une erreur est survenue.", 'bot');
+            } catch (err) {
+                typing.remove();
+                ajouterMessage("Connexion impossible. Réessaie dans un instant.", 'bot');
+            } finally {
+                input.disabled = false;
+                submitBtn.disabled = false;
+                input.focus();
+            }
+        });
+    })();
+    </script>
+
+</body>
+</html>
+
+
+
+=== ./tgym_site/__init__.py ===
+
+
+=== ./tgym_site/asgi.py ===
+"""
+ASGI config for tgym_site project.
+
+It exposes the ASGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+"""
+
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
+
+application = get_asgi_application()
+
+
+
+=== ./tgym_site/settings.py ===
+"""
+Django settings for tgym_site project.
+
+Generated by 'django-admin startproject' using Django 6.0.6.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/6.0/ref/settings/
+"""
+
+from pathlib import Path
+import os
+
+from dotenv import load_dotenv
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Charge .env s'il existe (développement local). En production (Render...),
+# les variables sont fournies directement par la plateforme — load_dotenv()
+# ne fait rien de mal dans ce cas (pas de fichier .env trouvé = no-op).
+load_dotenv(BASE_DIR / ".env")
+
+
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# La valeur par défaut ci-dessous n'est utilisable qu'en local (elle est
+# volontairement préfixée "django-insecure-") — en production, SECRET_KEY
+# doit TOUJOURS être fournie via l'environnement.
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-%5u)k0)ifbo38)yq1=9tfm@&31d=e1yno_@_2k$+5@k^zx-4z!",
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.environ.get("DEBUG", "True") == "True"
+
+# Ex. ALLOWED_HOSTS="tgym.example.com,www.tgym.example.com" (séparés par des virgules)
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
+
+
+# Application definition
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'core',
+    'abonnements',
+    'coaching',
+    'actualites',
+    'comptes',
+]
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+ROOT_URLCONF = 'tgym_site.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+                'core.context_processors.site_config',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'tgym_site.wsgi.application'
+
+
+# Database
+# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+
+# Password validation
+# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
+
+AUTHENTICATION_BACKENDS = [
+    "comptes.backends.IdentifiantOuTelephoneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+
+# Internationalization
+# https://docs.djangoproject.com/en/6.0/topics/i18n/
+
+LANGUAGE_CODE = 'fr-fr'
+
+TIME_ZONE = 'Africa/Porto-Novo'
+
+USE_I18N = True
+
+USE_TZ = True
+
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/6.0/howto/static-files/
+
+STATIC_URL = 'static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGIN_URL = 'comptes:connexion'
+LOGIN_REDIRECT_URL = 'comptes:mon_espace'
+LOGOUT_REDIRECT_URL = 'core:accueil'
+
+# Génération des messages de relance (abonnements/ia_relance.py). Laisser
+# vide en local pour utiliser automatiquement le message de secours —
+# aucune erreur bloquante si la clé n'est pas encore fournie.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Envoi automatique via WhatsApp Business Cloud API (Meta) — voir
+# abonnements/whatsapp_api.py. Tant que ces valeurs sont vides, l'envoi
+# automatique est simplement indisponible : les messages de relance restent
+# au statut "à envoyer" pour copie manuelle par le staff (aucun blocage).
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+# Nom + langue du template Meta pré-approuvé utilisé pour la relance
+# d'abonnement (à créer et faire approuver côté Meta Business Manager).
+WHATSAPP_TEMPLATE_RELANCE = os.environ.get("WHATSAPP_TEMPLATE_RELANCE", "relance_abonnement")
+WHATSAPP_TEMPLATE_LANGUE = os.environ.get("WHATSAPP_TEMPLATE_LANGUE", "fr")
+
+
+
+=== ./tgym_site/urls.py ===
+"""
+URL configuration for tgym_site project.
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/6.0/topics/http/urls/
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  path('', views.home, name='home')
+Class-based views
+    1. Add an import:  from other_app.views import Home
+    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
+Including another URLconf
+    1. Import the include() function: from django.urls import include, path
+    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+"""
+from django.conf import settings
+from django.conf.urls.static import static
+from django.contrib import admin
+from django.urls import include, path
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('core.urls')),
+    path('', include('coaching.urls')),
+    path('', include('actualites.urls')),
+    path('', include('comptes.urls')),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
+
+=== ./tgym_site/wsgi.py ===
+"""
+WSGI config for tgym_site project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
+
+application = get_wsgi_application()
+
+
+

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Mon espace</p>
+        <h2 style="color:var(--white);">Bonjour {{ request.user.first_name|default:request.user.username }}</h2>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        {% if profil.est_adherent %}
+        <div class="card">
+            <h3>Mon abonnement</h3>
+            {% if abonnement_actif %}
+                <p>
+                    <strong>{{ abonnement_actif.plan.nom }}</strong>
+                    {% if abonnement_actif.date_fin %}
+                        {% with jours=abonnement_actif.jours_restants %}
+                            {% if jours <= 3 %}
+                                <span class="badge badge--warn">Expire dans {{ jours }} jour{{ jours|pluralize }} ({{ abonnement_actif.date_fin|date:"d/m/Y" }})</span>
+                            {% else %}
+                                <span class="badge badge--ok">Actif jusqu'au {{ abonnement_actif.date_fin|date:"d/m/Y" }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    {% else %}
+                        <span class="badge badge--ok">Actif — {{ abonnement_actif.plan.description_courte }}</span>
+                    {% endif %}
+                </p>
+                <p style="margin-top:0.4rem;color:#777;font-size:0.85rem;">Débuté le {{ abonnement_actif.date_debut|date:"d/m/Y" }}</p>
+            {% else %}
+                <p>Aucun abonnement en cours. Rendez-vous sur la <a href="{% url 'core:tarifs' %}">page tarifs</a> ou contactez le staff pour vous inscrire.</p>
+            {% endif %}
+
+            {% if historique_abonnements %}
+            <table class="table-simple">
+                <thead>
+                    <tr><th>Formule</th><th>Début</th><th>Fin</th><th>Statut</th></tr>
+                </thead>
+                <tbody>
+                    {% for a in historique_abonnements %}
+                    <tr>
+                        <td>{{ a.plan.nom }}</td>
+                        <td>{{ a.date_debut|date:"d/m/Y" }}</td>
+                        <td>{{ a.date_fin|date:"d/m/Y"|default:"—" }}</td>
+                        <td>
+                            {% if not a.actif %}<span class="badge badge--muted">Annulé</span>
+                            {% else %}<span class="badge badge--muted">Terminé</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        {% elif profil.est_coach %}
+        <div class="card">
+            <h3>Espace coach</h3>
+            <p>La saisie des contrôles de résultat arrive bientôt.</p>
+        </div>
+        {% elif profil.est_staff %}
+        <div class="card">
+            <h3>Espace staff</h3>
+            <p>Gérez le site depuis l'<a href="/admin/">administration</a>.</p>
+            <p><a href="{% url 'comptes:creer_compte_adherent' %}" class="btn btn-primary">+ Créer un compte adhérent</a></p>
+        </div>
+        {% else %}
+        <p>Profil non configuré — contactez le staff.</p>
+        {% endif %}
+
+        <br>
+        <a href="{% url 'comptes:changer_mot_de_passe' %}">Changer mon mot de passe</a>
+        <br><br>
+        <form method="post" action="{% url 'comptes:deconnexion' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline">Se déconnecter</button>
+        </form>
+    </div>
+</section>
+
+{% endblock %}
+
+
+

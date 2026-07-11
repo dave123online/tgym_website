@@ -15,10 +15,11 @@ def _numero_par_defaut() -> str:
     return config.whatsapp_numero_1
 
 
-def _normaliser_numero(numero: str) -> str:
+def numero_international(numero: str) -> str:
     """
     Convertit un numéro local béninois (ex: '94140535') au format
-    international requis par wa.me (ex: '22994140535').
+    international sans '+' (ex: '22994140535'), requis aussi bien par les
+    liens wa.me que par l'API WhatsApp Business Cloud.
     Ne touche pas aux numéros déjà préfixés par un indicatif.
     """
     numero = numero.strip().replace(" ", "").replace("-", "")
@@ -27,6 +28,10 @@ def _normaliser_numero(numero: str) -> str:
     if numero.startswith("229"):
         return numero
     return f"229{numero}"
+
+
+# Alias interne conservé pour ne pas casser le reste de ce module.
+_normaliser_numero = numero_international
 
 
 def build_whatsapp_link(message: str, numero: str | None = None) -> str:
@@ -64,3 +69,6 @@ def build_generic_whatsapp_link(sujet: str = "") -> str:
     else:
         message = "Bonjour, j'aimerais avoir plus d'informations sur T-GYM."
     return build_whatsapp_link(message)
+
+
+

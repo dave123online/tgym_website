@@ -16,3 +16,6 @@ class ProgrammeAdmin(admin.ModelAdmin):
         ("Tarif", {"fields": ("prix_fcfa", "prix_note")}),
         ("Affichage", {"fields": ("est_phare", "actif", "ordre_affichage")}),
     )
+
+
+

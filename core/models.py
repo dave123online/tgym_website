@@ -21,6 +21,7 @@ class SiteConfig(models.Model):
     whatsapp_numero_2 = models.CharField("Numéro WhatsApp #2", max_length=20, default="63404995")
 
     facebook_url = models.URLField("Lien page Facebook", blank=True, default="https://facebook.com/tgymbenin")
+    instagram_url = models.URLField("Lien page Instagram", blank=True, default="")
 
     adresse_zone = models.CharField(
         "Zone", max_length=150, default="Abomey-Calavi, tronçon Carrefour TOKAN - Carrefour HOUÈTÔ"
@@ -37,6 +38,17 @@ class SiteConfig(models.Model):
     longitude = models.DecimalField(
         "Longitude GPS", max_digits=10, decimal_places=7, null=True, blank=True,
         help_text="Ex: 2.3548",
+    )
+
+    hero_image = models.ImageField(
+        "Photo de fond (accueil)", upload_to="site/", null=True, blank=True,
+        help_text="Photo large de la salle affichée derrière le titre de l'accueil. "
+                   "Idéalement une photo prise en salle, ambiance/lumière (1600px de large minimum).",
+    )
+    hero_video = models.FileField(
+        "Vidéo de fond (accueil, optionnel)", upload_to="site/", null=True, blank=True,
+        help_text="Courte vidéo (10-20s, en boucle, sans son) de l'ambiance de la salle. "
+                   "Si renseignée, prend le pas sur la photo de fond. Fichier léger recommandé (<10 Mo).",
     )
 
     def google_maps_url(self) -> str:
@@ -74,6 +86,69 @@ class SiteConfig(models.Model):
         verbose_name_plural = "Configuration du site"
 
 
+class VideoSalle(models.Model):
+    """
+    Vidéos courtes de la salle, affichées sur l'accueil. Deux usages :
+    - liée à un Programme (coaching.Programme) : vidéo "produit phare",
+      mise en avant dans la section dédiée au programme phare ;
+    - non liée : vidéo "généraliste" (ambiance, ressenti), affichée dans
+      le mur vidéo de la section "Vie de la salle".
+    Comme PhotoSalle : sections masquées automatiquement tant qu'aucune
+    vidéo n'est en ligne, pas de placeholder cassé avant upload.
+    """
+    fichier = models.FileField(
+        "Fichier vidéo", upload_to="videos/",
+        help_text="Format vertical ou horizontal, les deux fonctionnent. "
+                   "Fichier léger recommandé (idéalement <15 Mo, sans son "
+                   "nécessaire — elle sera lue en muet/boucle).",
+    )
+    apercu = models.ImageField(
+        "Image d'aperçu (poster)", upload_to="videos/apercus/", null=True, blank=True,
+        help_text="Image affichée le temps que la vidéo charge. Optionnelle mais recommandée.",
+    )
+    legende = models.CharField("Légende (optionnelle)", max_length=150, blank=True)
+    programme = models.ForeignKey(
+        "coaching.Programme", verbose_name="Programme associé (optionnel)",
+        null=True, blank=True, on_delete=models.SET_NULL, related_name="videos",
+        help_text="Si renseigné, cette vidéo apparaît dans la section du programme "
+                   "phare plutôt que dans le mur vidéo général.",
+    )
+    actif = models.BooleanField("Visible sur le site", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+    date_ajout = models.DateTimeField("Ajoutée le", default=timezone.now)
+
+    def __str__(self):
+        return self.legende or f"Vidéo #{self.pk}"
+
+    class Meta:
+        verbose_name = "Vidéo de la salle"
+        verbose_name_plural = "Vidéos de la salle"
+        ordering = ["ordre_affichage", "-date_ajout"]
+
+
+class PhotoSalle(models.Model):
+    """
+    Galerie "ambiance de la salle", affichée sur l'accueil. Purement
+    éditoriale (aucune logique métier) — l'objectif est de rendre le site
+    vivant avec de vraies photos de T-GYM plutôt que des stocks génériques.
+    Section masquée automatiquement sur le site tant qu'aucune photo n'est
+    en ligne (pas de placeholder cassé avant que le staff n'en ajoute).
+    """
+    image = models.ImageField("Photo", upload_to="galerie/")
+    legende = models.CharField("Légende (optionnelle)", max_length=150, blank=True)
+    actif = models.BooleanField("Visible sur le site", default=True)
+    ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
+    date_ajout = models.DateTimeField("Ajoutée le", default=timezone.now)
+
+    def __str__(self):
+        return self.legende or f"Photo #{self.pk}"
+
+    class Meta:
+        verbose_name = "Photo de la salle (galerie)"
+        verbose_name_plural = "Photos de la salle (galerie)"
+        ordering = ["ordre_affichage", "-date_ajout"]
+
+
 class Annonce(models.Model):
     """
     Bandeau coulissant ("Top Body"). Le staff peut publier/dépublier une actu,
@@ -102,3 +177,6 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
+
+
+
