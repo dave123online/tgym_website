@@ -311,6 +311,72 @@ le diff contre son historique réel plutôt que contre une reconstruction.
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
 
+## Déploiement — DATABASE_URL (Neon) + WhiteNoise (09/07/2026)
+✅ **Fait et testé**
+
+**Base de données** : `DATABASES` utilise maintenant `dj_database_url`,
+piloté par la variable d'environnement `DATABASE_URL`. Comportement :
+- **Absente** (cas local par défaut) → SQLite comme avant, rien à
+  changer pour développer en local
+- **Présente** (Neon en prod) → Postgres, `sslmode=require` forcé
+  automatiquement (obligatoire côté Neon), `conn_max_age=600` pour
+  réutiliser les connexions plutôt que d'en rouvrir une à chaque requête
+- Testé : parsing vérifié dans les deux cas (absente → sqlite3 confirmé ;
+  présente avec une URL Neon factice → postgresql + host + sslmode
+  correctement extraits)
+
+**Statique** : WhiteNoise ajouté (middleware juste après
+`SecurityMiddleware`, comme recommandé) + `CompressedManifestStaticFilesStorage`
+(fichiers hashés + compressés gzip/brotli, servis directement par
+l'app — pas besoin de S3/CDN à l'échelle de T-GYM). Point noté depuis
+longtemps dans ce fichier comme "pas commencé", maintenant fait.
+Testé : `collectstatic` fonctionne (126 fichiers, 378 après
+post-traitement), CSS servi en HTTP 200 via WhiteNoise en local.
+
+`requirements.txt` : ajout de `dj-database-url`, `psycopg2-binary`,
+`whitenoise`.
+
+Suite complète toujours 104/104 verts après ces changements.
+
+**Reste à faire pour le déploiement Render** :
+- `DATABASE_URL` de Neon à récupérer et poser en variable d'env sur Render
+- `IS_PRODUCTION=True`, `SECRET_KEY` (neuve), `DEBUG=False`,
+  `ALLOWED_HOSTS` (voir section sécurité plus haut — ces variables ne
+  sont pas encore posées nulle part, c'est le prochain chantier)
+- `Procfile` / commande de démarrage (`gunicorn` pas encore dans
+  `requirements.txt`)
+- `python manage.py migrate` + `createsuperuser` à lancer une fois sur
+  la base Neon fraîche (mot de passe fort choisi à ce moment, voir note
+  du 09/07/2026 sur le sujet)
+- Cache partagé (Redis) si plusieurs workers Render, pour que les
+  throttles (chatbot, anti-bruteforce) restent valables entre workers
+  (déjà noté plus haut, toujours pas tranché)
+
+## Migration SDK Gemini — google-generativeai → google-genai (09/07/2026)
+✅ **Fait et testé**
+`google-generativeai` est déprécié (même migration déjà faite sur le
+projet Viral Factory) — remplacé par `google-genai` (le SDK unifié
+Google) sur les deux points d'usage isolés exprès pour ça :
+- `core/chatbot.py` : `genai.configure()` + `GenerativeModel.start_chat()`
+  → `genai.Client(api_key=...)` + `client.chats.create(model=..., history=[types.Content(...)], config=types.GenerateContentConfig(system_instruction=...))`
+- `abonnements/ia_relance.py` : `GenerativeModel.generate_content()` →
+  `client.models.generate_content(model=..., contents=...)`
+- `requirements.txt` : `google-generativeai>=0.7,<1.0` →
+  `google-genai>=2.0,<3.0`
+- `abonnements/tests.py` : mocks migrés de
+  `google.generativeai.GenerativeModel`/`.configure` vers
+  `google.genai.Client`
+
+Testé : `google-generativeai` désinstallé du tout de l'environnement de
+test pour confirmer l'absence de dépendance résiduelle — suite complète
+toujours 104/104 verts. Aucun changement de comportement côté site
+(mêmes garde-fous : message de repli si clé absente, gabarit de secours
+si l'appel échoue, `gemini-1.5-flash` inchangé).
+
+**Action à faire par David** : `pip install -r requirements.txt` pour
+récupérer `google-genai` (et éventuellement `pip uninstall
+google-generativeai` pour nettoyer l'ancien, plus utilisé).
+
 ## Dark mode + correction prix programme phare (09/07/2026)
 ✅ **Fait et testé** — aucune nouvelle migration nécessaire (pas de
 nouveau champ de modèle)
@@ -1262,11 +1328,13 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
         return _message_secours(abonnement), False
 
     try:
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(_prompt(abonnement))
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=_prompt(abonnement),
+        )
         texte = (response.text or "").strip()
         if not texte:
             raise ValueError("Réponse vide de Gemini")
@@ -1669,24 +1737,22 @@ class IaRelanceTests(TestCase):
         self.assertIn("Premium", message)
 
     @override_settings(GEMINI_API_KEY="fake-key")
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_avec_gemini_mocke_utilise_la_reponse_ia(self, mock_configure, mock_model_cls):
-        mock_instance = Mock()
-        mock_instance.generate_content.return_value = Mock(text="Salut Awa, pense à renouveler !")
-        mock_model_cls.return_value = mock_instance
+    @patch("google.genai.Client")
+    def test_avec_gemini_mocke_utilise_la_reponse_ia(self, mock_client_cls):
+        mock_client = Mock()
+        mock_client.models.generate_content.return_value = Mock(text="Salut Awa, pense à renouveler !")
+        mock_client_cls.return_value = mock_client
 
         message, genere_par_ia = generer_message_relance(self.abo)
         self.assertTrue(genere_par_ia)
         self.assertEqual(message, "Salut Awa, pense à renouveler !")
 
     @override_settings(GEMINI_API_KEY="fake-key")
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_erreur_gemini_bascule_sur_le_secours_sans_exception(self, mock_configure, mock_model_cls):
-        mock_instance = Mock()
-        mock_instance.generate_content.side_effect = RuntimeError("Gemini down")
-        mock_model_cls.return_value = mock_instance
+    @patch("google.genai.Client")
+    def test_erreur_gemini_bascule_sur_le_secours_sans_exception(self, mock_client_cls):
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = RuntimeError("Gemini down")
+        mock_client_cls.return_value = mock_client
 
         message, genere_par_ia = generer_message_relance(self.abo)
         self.assertFalse(genere_par_ia)
@@ -2186,6 +2252,25 @@ def actualite_detail(request, slug):
 
 
 
+
+=== ./build.sh ===
+#!/usr/bin/env bash
+# Quitter le script immédiatement si une commande échoue
+set -o errexit
+
+# 1. Installer les dépendances Python
+pip install -r requirements.txt
+
+# 2. Collecter les fichiers statiques (Tailwind, Admin, etc.)
+python manage.py collectstatic --no-input --ignore=src
+
+# 3. Appliquer les migrations sur la base de données de prod
+python manage.py migrate
+
+# Création automatique du superuser en prod
+if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
+  python manage.py createsuperuser --noinput || true
+fi
 
 === ./coaching/__init__.py ===
 
@@ -3780,17 +3865,19 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
         return MESSAGE_REPLI
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            system_instruction=_instructions_systeme(),
-        )
-        contenu_historique = [
-            {"role": tour["role"], "parts": [tour["text"]]} for tour in historique
+        client = genai.Client(api_key=api_key)
+        historique_contenu = [
+            types.Content(role=tour["role"], parts=[types.Part.from_text(text=tour["text"])])
+            for tour in historique
         ]
-        chat = model.start_chat(history=contenu_historique)
+        chat = client.chats.create(
+            model="gemini-1.5-flash",
+            history=historique_contenu,
+            config=types.GenerateContentConfig(system_instruction=_instructions_systeme()),
+        )
         response = chat.send_message(message)
         texte = (response.text or "").strip()
         return texte or MESSAGE_REPLI
@@ -3971,6 +4058,9 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
+
+
+
 
 === ./core/models.py ===
 from django.core.exceptions import ValidationError
@@ -5191,12 +5281,12 @@ if __name__ == '__main__':
 === ./requirements.txt ===
 Django>=4.2,<5
 Pillow>=10.0
-google-generativeai>=0.7,<1.0
+google-genai>=2.0,<3.0
 requests>=2.31,<3.0
 python-dotenv>=1.0,<2.0
-
-
-
+dj-database-url>=2.1,<3.0
+psycopg2-binary>=2.9,<3.0
+whitenoise>=6.6,<7.0
 
 === ./static/css/theme.css ===
 :root {
@@ -6227,6 +6317,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 
+import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
@@ -6302,6 +6393,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -6334,12 +6426,18 @@ WSGI_APPLICATION = 'tgym_site.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
+#
+# Neon (Postgres) en prod via DATABASE_URL, SQLite en local si la
+# variable n'est pas définie — aucune config à changer entre les deux,
+# c'est juste la présence de DATABASE_URL qui bascule.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+        conn_health_checks=True,
+        # Neon exige TLS ; ignoré si le default (sqlite) est utilisé.
+        ssl_require=bool(os.environ.get("DATABASE_URL")),
+    )
 }
 
 
@@ -6384,6 +6482,18 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        # Fichiers hashés + compressés (gzip/brotli), servis directement
+        # par l'app sans serveur statique séparé — suffisant à l'échelle
+        # de T-GYM, pas besoin de S3/CDN pour l'instant.
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
