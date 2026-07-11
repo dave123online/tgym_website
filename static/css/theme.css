@@ -559,5 +559,128 @@ a { color: inherit; text-decoration: none; }
   .programme-phare__ecran { max-width: 240px; }
 }
 
+/* ---------- Rangée "Activité" (clips courts du programme phare) ---------- */
+.activite-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.activite-row__tile {
+  position: relative;
+  flex: none;
+  width: 130px;
+  aspect-ratio: 9 / 16;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--black-soft);
+}
+.activite-row__tile video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.activite-row__legende {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.8), transparent);
+}
+
+/* ---------- Carrousel témoignages (une vidéo active, avec le son,
+   avance automatique en boucle sur toutes les vignettes) ---------- */
+.temoignages-carrousel {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+.temoignages-carrousel__lecteur {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--black);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+}
+.temoignages-carrousel__lecteur video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.temoignages-carrousel__son {
+  position: absolute;
+  bottom: 0.75rem; left: 0.75rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(245,196,0,0.95);
+  color: var(--black);
+  cursor: pointer;
+}
+.temoignages-carrousel__vignettes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.6rem;
+  align-content: start;
+}
+.temoignages-carrousel__vignette {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  background: var(--black-soft);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.temoignages-carrousel__vignette img,
+.temoignages-carrousel__vignette video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.temoignages-carrousel__play {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+.temoignages-carrousel__vignette span:not(.temoignages-carrousel__play) {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--white);
+  background: linear-gradient(0deg, rgba(0,0,0,0.85), transparent);
+}
+.temoignages-carrousel__vignette.is-active {
+  border-color: var(--yellow);
+  transform: scale(1.04);
+}
+.temoignages-carrousel__vignette.is-active img,
+.temoignages-carrousel__vignette.is-active video { opacity: 1; }
+.temoignages-carrousel__vignette.is-active .temoignages-carrousel__play { display: none; }
+@media (max-width: 700px) {
+  .temoignages-carrousel { grid-template-columns: 1fr; }
+  .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
+}
+
 
 

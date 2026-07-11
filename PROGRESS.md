@@ -172,6 +172,19 @@ Légende : ✅ fait & testé · 🔄 en cours · ⏳ pas commencé · 🔒 bloqu
 
 ---
 
+## Note de process — incident migrations (09/07/2026)
+Un livrable a régénéré tout `core/migrations/` depuis zéro (car
+reconstruit à partir d'un `codebase.txt` qui n'incluait pas les
+migrations), au lieu de partir du vrai historique git de David —
+conflit de branches à la clé (`0003_videosalle` vs
+`0005_siteconfig_instagram_url`), résolu avec `git checkout` sur le
+dossier migrations + suppression des fichiers en trop + régénération
+propre. **Règle depuis** : les livraisons contiennent le code
+(`models.py`, `views.py`, templates, CSS...) mais **jamais de fichier de
+migration tout fait** — c'est toujours David qui lance
+`makemigrations`/`migrate` contre sa vraie base, pour que Django calcule
+le diff contre son historique réel plutôt que contre une reconstruction.
+
 ## Petits points en attente (non bloquants)
 - Identifiants de test locaux (`admin` existant côté staff) à changer
   avant toute mise en ligne — **à faire par David lui-même**, pas encore fait
@@ -179,6 +192,67 @@ Légende : ✅ fait & testé · 🔄 en cours · ⏳ pas commencé · 🔒 bloqu
   si besoin un jour de remplacer le texte libre `prix_note` par une vraie
   relation — pas urgent, `coaching` et `abonnements` restent deux apps
   distinctes (décidé le 08/07/2026, voir ci-dessous)
+
+## Fix — vignettes témoignages noires sans poster (09/07/2026)
+✅ **Fait et testé**
+Constat de David : les vignettes témoignages sans `apercu` uploadé
+s'affichaient en rectangle noir, aucune indication qu'elles sont
+cliquables/jouables. Corrigé :
+- **Icône ▶ toujours visible** sur chaque vignette non active
+  (`.temoignages-carrousel__play`), qu'il y ait un poster ou non
+- **Fallback sans poster** : si `apercu` n'est pas renseigné, une
+  balise `<video preload="metadata">` est utilisée à la place de
+  l'`<img>`, avec un `currentTime = 0.5` forcé au chargement des
+  métadonnées (nécessaire — certains navigateurs restent sur un cadre
+  noir tant qu'aucun `seek` explicite n'est fait, le simple `#t=0.5`
+  dans l'URL ne suffit pas partout)
+- Aucun impact sur les vignettes qui ONT un poster (comportement
+  identique à avant)
+Testé : suite complète 104/104 verts, rendu vérifié avec vignettes
+avec/sans poster.
+
+## Accueil enrichi — 09/07/2026 (v3 : activité / témoignages / formules)
+✅ **Fait et testé** — ⚠️ **migration NON incluse dans ce livrable**, à
+générer par David lui-même (`python manage.py makemigrations core` puis
+`migrate`) — leçon tirée de l'incident de migrations du 09/07/2026 (voir
+plus bas), on ne livre plus de fichier de migration tout fait.
+
+Contexte : David a en stock des vidéos généralistes + des vidéos
+"45 jours pour maigrir" de deux natures (activité, et témoignages
+d'adhérents coupés dans les passages intéressants). Répartition décidée
+avec lui :
+- **Généralistes** → mur vidéo, sur l'accueil **ET** `/tarifs/` (nouveau,
+  section "Un aperçu de l'intérieur" en bas de page, avant le CTA)
+- **Activité (45 jours)** → restent dans la section programme phare de
+  l'accueil : 1ère vidéo en cadre portrait (comme avant), les suivantes
+  en rangée de vignettes portrait défilable en dessous
+- **Témoignages (45 jours)** → nouveau **carrousel témoignages**, dans
+  la même section programme phare de l'accueil
+
+`VideoSalle` : ajout du champ `type_video` (généraliste / activité /
+témoignage), ignoré et remis automatiquement à "généraliste" en `save()`
+si aucun `programme` n'est renseigné (cohérence garantie même en cas
+d'erreur de saisie dans l'admin).
+
+**Carrousel témoignages** — comportement demandé par David : les
+vignettes des 5 (ou plus) témoignages sont visibles côte à côte, une
+seule vidéo est "active" à la fois (cadre principal, plus grand), elle
+se lit avec le son, et à la fin elle enchaîne automatiquement sur la
+suivante, en boucle continue sur l'ensemble. Détail technique important
+respecté : les navigateurs bloquent l'autoplay AVEC son sans geste
+utilisateur — le carrousel démarre donc en muet automatiquement, avec un
+bouton "🔇 Activer le son" visible ; une fois cliqué (geste utilisateur),
+les lectures suivantes déclenchées par `ended` (fin de vidéo) restent
+autorisées avec le son sur le même `<video>`. Un seul élément vidéo dans
+le DOM (pas 5) : la source est simplement remplacée à chaque avance,
+pour ne charger qu'une vidéo à la fois (cohérent avec le souci de
+bande passante déjà documenté dans `GUIDE_VIDEOS.md`).
+
+Testé : suite complète toujours à 104/104 verts après migration ; rendu
+structurel vérifié avec 3 vidéos activité + 5 témoignages + 4
+généralistes de démo (1 en cadre portrait + 2 en rangée activité, 5
+vignettes témoignages, mur généraliste identique sur accueil ET tarifs,
+zéro erreur serveur) — démo supprimée avant livraison.
 
 ## Accueil enrichi — 09/07/2026 (v2 : direction vidéo-first)
 ✅ **Fait et testé**
