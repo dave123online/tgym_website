@@ -9,7 +9,7 @@ pip install -r requirements.txt
 python manage.py collectstatic --no-input --ignore=src
 
 # 3. Appliquer les migrations sur la base de données de prod
-python manage.py migrate --fake-initial
+python manage.py migrate 
 
 # Création automatique du superuser en prod
 if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
