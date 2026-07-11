@@ -88,19 +88,31 @@ class SiteConfig(models.Model):
 
 class VideoSalle(models.Model):
     """
-    Vidéos courtes de la salle, affichées sur l'accueil. Deux usages :
-    - liée à un Programme (coaching.Programme) : vidéo "produit phare",
-      mise en avant dans la section dédiée au programme phare ;
-    - non liée : vidéo "généraliste" (ambiance, ressenti), affichée dans
-      le mur vidéo de la section "Vie de la salle".
+    Vidéos courtes de la salle, affichées sur l'accueil (et, pour les
+    généralistes, sur /tarifs/ aussi). Trois usages :
+    - non liée à un programme : "généraliste" (ambiance, matériel, salle),
+      affichée dans le mur vidéo (accueil ET tarifs) ;
+    - liée à un programme, type "activité" : clips d'exercice/séance,
+      affichés en ligne compacte dans la section du programme phare ;
+    - liée à un programme, type "témoignage" : clips d'adhérents coupés
+      dans les passages intéressants, affichés dans le carrousel
+      "témoignages" (une vidéo à la fois, avec le son) de la section du
+      programme phare.
     Comme PhotoSalle : sections masquées automatiquement tant qu'aucune
     vidéo n'est en ligne, pas de placeholder cassé avant upload.
     """
+
+    class TypeVideo(models.TextChoices):
+        GENERALE = "generale", "Généraliste (pas de programme)"
+        ACTIVITE = "activite", "Activité (programme)"
+        TEMOIGNAGE = "temoignage", "Témoignage (programme)"
+
     fichier = models.FileField(
         "Fichier vidéo", upload_to="videos/",
         help_text="Format vertical ou horizontal, les deux fonctionnent. "
                    "Fichier léger recommandé (idéalement <15 Mo, sans son "
-                   "nécessaire — elle sera lue en muet/boucle).",
+                   "nécessaire — elle sera lue en muet/boucle, sauf en "
+                   "carrousel témoignages où le son est utilisé).",
     )
     apercu = models.ImageField(
         "Image d'aperçu (poster)", upload_to="videos/apercus/", null=True, blank=True,
@@ -110,12 +122,24 @@ class VideoSalle(models.Model):
     programme = models.ForeignKey(
         "coaching.Programme", verbose_name="Programme associé (optionnel)",
         null=True, blank=True, on_delete=models.SET_NULL, related_name="videos",
-        help_text="Si renseigné, cette vidéo apparaît dans la section du programme "
-                   "phare plutôt que dans le mur vidéo général.",
+        help_text="Laisser vide pour une vidéo généraliste (mur accueil + tarifs). "
+                   "Renseigner pour une vidéo liée à un programme (voir le champ Type).",
+    )
+    type_video = models.CharField(
+        "Type", max_length=20, choices=TypeVideo.choices, default=TypeVideo.GENERALE,
+        help_text="Ignoré si aucun programme n'est renseigné (repasse automatiquement "
+                   "à 'Généraliste' à l'enregistrement dans ce cas).",
     )
     actif = models.BooleanField("Visible sur le site", default=True)
     ordre_affichage = models.PositiveIntegerField("Ordre d'affichage", default=0)
     date_ajout = models.DateTimeField("Ajoutée le", default=timezone.now)
+
+    def save(self, *args, **kwargs):
+        # Cohérence automatique : une vidéo sans programme est forcément
+        # "généraliste", quel que soit ce qui a été sélectionné par erreur.
+        if self.programme_id is None:
+            self.type_video = self.TypeVideo.GENERALE
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.legende or f"Vidéo #{self.pk}"

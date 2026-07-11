@@ -47,6 +47,26 @@
     </div>
 </section>
 
+{% if videos_generales %}
+<div class="cable-divider cable-divider--ondark"></div>
+<section class="section section--dark">
+    <div class="container">
+        <p class="eyebrow">Avant de vous décider</p>
+        <h2 style="color:var(--white);">Un aperçu de l'intérieur</h2>
+        <div class="video-wall">
+            {% for video in videos_generales %}
+            <div class="video-wall__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <span class="video-wall__play">▶</span>
+                {% if video.legende %}<span class="video-wall__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+<div class="cable-divider cable-divider--onlight"></div>
+{% endif %}
+
 {% endblock %}
 
 

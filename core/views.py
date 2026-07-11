@@ -49,14 +49,22 @@ def accueil(request):
     plan_populaire = plans.filter(is_populaire=True).first()
     contact_link = build_generic_whatsapp_link()
     galerie = PhotoSalle.objects.filter(actif=True)[:8]
-    videos_programme = VideoSalle.objects.filter(actif=True, programme__actif=True, programme__est_phare=True)
+    videos_activite = VideoSalle.objects.filter(
+        actif=True, programme__actif=True, programme__est_phare=True,
+        type_video=VideoSalle.TypeVideo.ACTIVITE,
+    )
+    videos_temoignages = VideoSalle.objects.filter(
+        actif=True, programme__actif=True, programme__est_phare=True,
+        type_video=VideoSalle.TypeVideo.TEMOIGNAGE,
+    )
     videos_generales = VideoSalle.objects.filter(actif=True, programme__isnull=True)[:7]
     actus_recentes = Actualite.objects.filter(est_publiee=True)[:3]
     return render(request, "core/accueil.html", {
         "plan_populaire": plan_populaire,
         "contact_link": contact_link,
         "galerie": galerie,
-        "videos_programme": videos_programme,
+        "videos_activite": videos_activite,
+        "videos_temoignages": videos_temoignages,
         "videos_generales": videos_generales,
         "actus_recentes": actus_recentes,
     })
@@ -76,9 +84,12 @@ def tarifs(request):
     for plan in list(plans_premium) + list(plans_flexibles):
         plan.whatsapp_link = build_plan_whatsapp_link(plan)
 
+    videos_generales = VideoSalle.objects.filter(actif=True, programme__isnull=True)[:7]
+
     return render(request, "core/tarifs.html", {
         "plans_premium": plans_premium,
         "plans_flexibles": plans_flexibles,
+        "videos_generales": videos_generales,
     })
 
 

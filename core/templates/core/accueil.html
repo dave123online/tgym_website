@@ -87,7 +87,7 @@
 <section class="section">
     <div class="container">
         <div class="programme-phare">
-            {% with video_phare=videos_programme.first %}
+            {% with video_phare=videos_activite.first %}
             <div class="programme-phare__ecran">
                 {% if video_phare %}
                     <video src="{{ video_phare.fichier.url }}" {% if video_phare.apercu %}poster="{{ video_phare.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
@@ -104,6 +104,93 @@
                 <a href="{% url 'coaching:programme_detail' programme_phare.slug %}" class="btn btn-primary">En savoir plus</a>
             </div>
         </div>
+
+        {% if videos_activite|length > 1 %}
+        <div class="activite-row">
+            {% for video in videos_activite|slice:"1:5" %}
+            <div class="activite-row__tile">
+                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                {% if video.legende %}<span class="activite-row__legende">{{ video.legende }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if videos_temoignages %}
+        <div class="temoignages">
+            <p class="eyebrow" style="margin-top:2.5rem;">Ils l'ont vécu</p>
+            <h3 style="margin:0 0 1.25rem;">Témoignages "{{ programme_phare.titre }}"</h3>
+
+            <div class="temoignages-carrousel" data-temoignages-carrousel>
+                <div class="temoignages-carrousel__lecteur">
+                    <video data-temoignages-video playsinline muted></video>
+                    <button type="button" class="temoignages-carrousel__son" data-temoignages-son>🔇 Activer le son</button>
+                </div>
+                <div class="temoignages-carrousel__vignettes" data-temoignages-vignettes>
+                    {% for video in videos_temoignages %}
+                    <button type="button"
+                            class="temoignages-carrousel__vignette{% if forloop.first %} is-active{% endif %}"
+                            data-src="{{ video.fichier.url }}"
+                            data-poster="{% if video.apercu %}{{ video.apercu.url }}{% endif %}"
+                            aria-label="{{ video.legende|default:"Témoignage" }}">
+                        {% if video.apercu %}
+                            <img src="{{ video.apercu.url }}" alt="">
+                        {% else %}
+                            <video src="{{ video.fichier.url }}#t=0.5" preload="metadata" muted playsinline data-vignette-fallback></video>
+                        {% endif %}
+                        <span class="temoignages-carrousel__play">▶</span>
+                        {% if video.legende %}<span>{{ video.legende }}</span>{% endif %}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function () {
+            const racine = document.currentScript.closest("section").querySelector("[data-temoignages-carrousel]");
+            if (!racine) return;
+
+            const lecteur = racine.querySelector("[data-temoignages-video]");
+            const boutonSon = racine.querySelector("[data-temoignages-son]");
+            const vignettes = Array.from(racine.querySelectorAll(".temoignages-carrousel__vignette"));
+            let index = 0;
+            let sonActive = false;
+
+            // Fallback sans poster uploadé : certains navigateurs affichent
+            // un cadre noir tant qu'on n'a pas explicitement demandé une
+            // frame (le #t=0.5 dans l'URL ne suffit pas partout).
+            racine.querySelectorAll("[data-vignette-fallback]").forEach((v) => {
+                v.addEventListener("loadedmetadata", () => { v.currentTime = 0.5; }, { once: true });
+            });
+
+            function charger(i, jouer) {
+                index = (i + vignettes.length) % vignettes.length;
+                vignettes.forEach((v, n) => v.classList.toggle("is-active", n === index));
+                const v = vignettes[index];
+                lecteur.src = v.dataset.src;
+                if (v.dataset.poster) lecteur.poster = v.dataset.poster;
+                lecteur.muted = !sonActive;
+                if (jouer) lecteur.play().catch(() => {});
+            }
+
+            vignettes.forEach((v, n) => {
+                v.addEventListener("click", () => charger(n, true));
+            });
+
+            lecteur.addEventListener("ended", () => charger(index + 1, true));
+
+            boutonSon.addEventListener("click", () => {
+                sonActive = !sonActive;
+                lecteur.muted = !sonActive;
+                boutonSon.textContent = sonActive ? "🔊 Son activé" : "🔇 Activer le son";
+                if (sonActive) lecteur.play().catch(() => {});
+            });
+
+            charger(0, true);
+        })();
+        </script>
+        {% endif %}
     </div>
 </section>
 <div class="cable-divider cable-divider--onlight"></div>
