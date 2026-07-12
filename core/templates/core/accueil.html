@@ -119,7 +119,7 @@
         {% if videos_temoignages %}
         <div class="temoignages">
             <p class="eyebrow" style="margin-top:2.5rem;">Ils l'ont vécu</p>
-            <h3 style="margin:0 0 1.25rem;">Témoignages "{{ programme_phare.titre }}"</h3>
+            <h3 style="margin:0 0 1.25rem;">Révélations "{{ programme_phare.titre }}"</h3>
 
             <div class="temoignages-carrousel" data-temoignages-carrousel>
                 <div class="temoignages-carrousel__lecteur">
@@ -132,7 +132,7 @@
                             class="temoignages-carrousel__vignette{% if forloop.first %} is-active{% endif %}"
                             data-src="{{ video.fichier.url }}"
                             data-poster="{% if video.apercu %}{{ video.apercu.url }}{% endif %}"
-                            aria-label="{{ video.legende|default:"Témoignage" }}">
+                            aria-label="{{ video.legende|default:"Révélation" }}">
                         {% if video.apercu %}
                             <img src="{{ video.apercu.url }}" alt="">
                         {% else %}

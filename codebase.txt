@@ -2259,7 +2259,7 @@ def actualite_detail(request, slug):
 set -o errexit
 
 # 1. Installer les dépendances Python
-pip install -r requirements.txt
+pip install -r requirements.txt --upgrade pip
 
 # 2. Collecter les fichiers statiques (Tailwind, Admin, etc.)
 python manage.py collectstatic --no-input --ignore=src
@@ -2267,6 +2267,7 @@ python manage.py collectstatic --no-input --ignore=src
 # 3. Appliquer les migrations sur la base de données de prod
 python manage.py migrate --fake-initial
 
+python manage.py seed_tgym
 # Création automatique du superuser en prod
 if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
   python manage.py createsuperuser --noinput || true
@@ -4063,9 +4064,16 @@ class Command(BaseCommand):
 
 
 === ./core/models.py ===
+from cloudinary_storage.storage import MediaCloudinaryStorage
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+
+# django-cloudinary-storage utilise resource_type="image" par défaut sur
+# MediaCloudinaryStorage — correct pour ImageField, mais Cloudinary refuse
+# un .mp4 envoyé avec ce type ("Invalid image file"). Les champs vidéo
+# doivent explicitement utiliser resource_type="video".
+video_storage = MediaCloudinaryStorage(resource_type="video")
 
 
 class SiteConfig(models.Model):
@@ -4112,6 +4120,7 @@ class SiteConfig(models.Model):
     )
     hero_video = models.FileField(
         "Vidéo de fond (accueil, optionnel)", upload_to="site/", null=True, blank=True,
+        storage=video_storage,
         help_text="Courte vidéo (10-20s, en boucle, sans son) de l'ambiance de la salle. "
                    "Si renseignée, prend le pas sur la photo de fond. Fichier léger recommandé (<10 Mo).",
     )
@@ -4174,6 +4183,7 @@ class VideoSalle(models.Model):
 
     fichier = models.FileField(
         "Fichier vidéo", upload_to="videos/",
+        storage=video_storage,
         help_text="Format vertical ou horizontal, les deux fonctionnent. "
                    "Fichier léger recommandé (idéalement <15 Mo, sans son "
                    "nécessaire — elle sera lue en muet/boucle, sauf en "
@@ -4266,9 +4276,6 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
-
-
-
 
 === ./core/templates/core/accueil.html ===
 {% extends "base.html" %}
@@ -5279,15 +5286,20 @@ if __name__ == '__main__':
 
 
 === ./requirements.txt ===
- Django>=4.2,<5
- Pillow>=10.0
- google-genai>=2.0,<3.0
- requests>=2.31,<3.0
- python-dotenv>=1.0,<2.0
- dj-database-url>=2.1,<3.0
- psycopg2-binary>=2.9,<3.0
- whitenoise>=6.6,<7.0
- gunicorn>=21.0,<22.0
+Django==4.2.30
+Pillow>=10.0
+google-genai>=2.0,<3.0
+requests>=2.31,<3.0
+python-dotenv>=1.0,<2.0
+dj-database-url>=2.1,<3.0
+psycopg2-binary>=2.9,<3.0
+whitenoise==6.7.0
+gunicorn>=21.0,<22.0
+cloudinary>=1.40,<2.0
+django-cloudinary-storage>=0.3,<0.4
+=== ./runtime.txt ===
+python-3.12.9
+
 === ./static/css/theme.css ===
 :root {
   --black: #0d0d0d;
@@ -5398,22 +5410,149 @@ a { color: inherit; text-decoration: none; }
   .top-bar__track { animation: none; padding-left: 1.25rem; }
 }
 
-/* ---------- Header ---------- */
+/* ---------- Header (mobile-first) ---------- */
 .header {
   background: var(--black);
   padding: 1rem 0;
+  position: relative;
+  z-index: 40;
 }
-.header__inner { display: flex; align-items: center; justify-content: space-between; }
-.logo { color: var(--yellow); font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; }
-.nav { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-.nav a { color: var(--white); font-size: 0.9rem; font-weight: 600; }
-.nav a:hover { color: var(--yellow); }
+.header__inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.logo { color: var(--yellow); font-size: 1.35rem; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+
+/* Nav complète : cachée par défaut (mobile), affichée en ligne à partir de 900px */
+.nav-desktop { display: none; }
+
+/* ---------- Bouton burger (mobile uniquement) ---------- */
+.nav-burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+.nav-burger span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--white);
+  border-radius: 2px;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+.nav-burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.nav-burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ---------- Sidebar de navigation (mobile) ---------- */
+.nav-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 90;
+}
+.nav-overlay--visible { opacity: 1; pointer-events: auto; }
+
+.nav-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 85vw);
+  background: var(--black);
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s ease;
+  box-shadow: -8px 0 30px rgba(0,0,0,0.4);
+}
+.nav-sidebar--open { transform: translateX(0); }
+
+.nav-sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--black-soft);
+  flex: none;
+}
+.nav-sidebar__close {
+  background: none;
+  border: none;
+  color: var(--white);
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+.nav-sidebar__links {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.nav-sidebar__links a {
+  color: var(--white);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.nav-sidebar__links a:hover,
+.nav-sidebar__links a:active { color: var(--yellow); background: var(--black-soft); }
+
+.nav-sidebar__footer {
+  padding: 1.1rem 1.25rem 1.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-top: 1px solid var(--black-soft);
+  flex: none;
+}
+.nav-sidebar__cta { flex: 1; text-align: center; }
+
+body.nav-lock { overflow: hidden; }
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--grey-dark);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
 .btn-whatsapp-nav {
   background: var(--yellow);
   color: var(--black) !important;
   padding: 0.5rem 1rem;
   border-radius: 999px;
   font-weight: 700 !important;
+}
+
+/* ---------- Header desktop (>= 900px) : nav en ligne, burger/sidebar masqués ---------- */
+@media (min-width: 900px) {
+  .nav-desktop { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+  .nav-desktop a { color: var(--white); font-size: 0.9rem; font-weight: 600; }
+  .nav-desktop a:hover { color: var(--yellow); }
+  .nav-burger,
+  .nav-overlay,
+  .nav-sidebar { display: none; }
 }
 
 /* ---------- Hero ---------- */
@@ -5526,20 +5665,9 @@ a { color: inherit; text-decoration: none; }
 .badge--warn { background: #fff3cd; color: #7a5b00; }
 .badge--muted { background: #eee; color: #666; }
 
-/* ---------- Interrupteur thème clair/sombre ---------- */
-.theme-toggle {
-  background: none;
-  border: 1px solid var(--grey-dark);
-  border-radius: 999px;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  flex: none;
-}
+/* ---------- Interrupteur thème clair/sombre (icônes ; le style du bouton
+   lui-même est défini plus haut, section Header, car réutilisé dans le
+   header desktop ET la sidebar mobile) ---------- */
 .theme-toggle__icon { font-size: 0.95rem; line-height: 1; display: none; }
 /* Par défaut (pas de préférence enregistrée) : suit prefers-color-scheme */
 .theme-toggle__icon--sun { display: inline; }
@@ -6070,9 +6198,6 @@ input:focus, textarea:focus, select:focus {
   .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
 }
 
-
-
-
 === ./templates/base.html ===
 {% load static %}
 <!DOCTYPE html>
@@ -6122,7 +6247,8 @@ input:focus, textarea:focus, select:focus {
     <header class="header">
         <div class="container header__inner">
             <a href="{% url 'core:accueil' %}" class="logo">{{ site_config.nom }}</a>
-            <nav class="nav">
+
+            <nav class="nav-desktop">
                 <a href="{% url 'core:accueil' %}">Accueil</a>
                 <a href="{% url 'core:methode' %}">La Méthode</a>
                 <a href="{% url 'coaching:programmes' %}">Programmes</a>
@@ -6135,13 +6261,46 @@ input:focus, textarea:focus, select:focus {
                     <a href="{% url 'comptes:connexion' %}">Connexion</a>
                 {% endif %}
                 <a class="btn-whatsapp-nav" href="{% url 'core:tarifs' %}">S'inscrire</a>
-                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Changer de thème">
+                <button type="button" class="theme-toggle" aria-label="Changer de thème">
                     <span class="theme-toggle__icon theme-toggle__icon--sun">☀️</span>
                     <span class="theme-toggle__icon theme-toggle__icon--moon">🌙</span>
                 </button>
             </nav>
+
+            <button type="button" class="nav-burger" id="nav-burger" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="nav-sidebar">
+                <span></span><span></span><span></span>
+            </button>
         </div>
     </header>
+
+    <div class="nav-overlay" id="nav-overlay"></div>
+
+    <aside class="nav-sidebar" id="nav-sidebar" aria-hidden="true">
+        <div class="nav-sidebar__head">
+            <span class="logo">{{ site_config.nom }}</span>
+            <button type="button" class="nav-sidebar__close" id="nav-sidebar-close" aria-label="Fermer le menu">✕</button>
+        </div>
+        <nav class="nav-sidebar__links">
+            <a href="{% url 'core:accueil' %}">Accueil</a>
+            <a href="{% url 'core:methode' %}">La Méthode</a>
+            <a href="{% url 'coaching:programmes' %}">Programmes</a>
+            <a href="{% url 'actualites:actualites' %}">Actualités</a>
+            <a href="{% url 'core:tarifs' %}">Tarifs</a>
+            <a href="{% url 'core:ou_nous_trouver' %}">Où nous trouver</a>
+            {% if request.user.is_authenticated %}
+                <a href="{% url 'comptes:mon_espace' %}">Mon espace</a>
+            {% else %}
+                <a href="{% url 'comptes:connexion' %}">Connexion</a>
+            {% endif %}
+        </nav>
+        <div class="nav-sidebar__footer">
+            <a class="btn-whatsapp-nav nav-sidebar__cta" href="{% url 'core:tarifs' %}">S'inscrire</a>
+            <button type="button" class="theme-toggle" aria-label="Changer de thème">
+                <span class="theme-toggle__icon theme-toggle__icon--sun">☀️</span>
+                <span class="theme-toggle__icon theme-toggle__icon--moon">🌙</span>
+            </button>
+        </div>
+    </aside>
 
     <main>
         {% block content %}{% endblock %}
@@ -6253,8 +6412,43 @@ input:focus, textarea:focus, select:focus {
 
     <script>
     (function () {
-        const bouton = document.getElementById("theme-toggle");
-        if (!bouton) return;
+        const burger = document.getElementById('nav-burger');
+        const sidebar = document.getElementById('nav-sidebar');
+        const overlay = document.getElementById('nav-overlay');
+        const closeBtn = document.getElementById('nav-sidebar-close');
+        const sidebarLinks = sidebar.querySelectorAll('a');
+
+        function ouvrirMenu() {
+            sidebar.classList.add('nav-sidebar--open');
+            overlay.classList.add('nav-overlay--visible');
+            sidebar.setAttribute('aria-hidden', 'false');
+            burger.setAttribute('aria-expanded', 'true');
+            document.body.classList.add('nav-lock');
+        }
+        function fermerMenu() {
+            sidebar.classList.remove('nav-sidebar--open');
+            overlay.classList.remove('nav-overlay--visible');
+            sidebar.setAttribute('aria-hidden', 'true');
+            burger.setAttribute('aria-expanded', 'false');
+            document.body.classList.remove('nav-lock');
+        }
+
+        burger.addEventListener('click', function () {
+            burger.getAttribute('aria-expanded') === 'true' ? fermerMenu() : ouvrirMenu();
+        });
+        closeBtn.addEventListener('click', fermerMenu);
+        overlay.addEventListener('click', fermerMenu);
+        sidebarLinks.forEach(function (a) { a.addEventListener('click', fermerMenu); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') fermerMenu();
+        });
+    })();
+    </script>
+
+    <script>
+    (function () {
+        const boutons = document.querySelectorAll(".theme-toggle");
+        if (!boutons.length) return;
 
         function themeActuel() {
             const enregistre = document.documentElement.getAttribute("data-theme");
@@ -6262,19 +6456,18 @@ input:focus, textarea:focus, select:focus {
             return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         }
 
-        bouton.addEventListener("click", () => {
-            const prochain = themeActuel() === "dark" ? "light" : "dark";
-            document.documentElement.setAttribute("data-theme", prochain);
-            try { localStorage.setItem("tgym-theme", prochain); } catch (e) {}
+        boutons.forEach(function (bouton) {
+            bouton.addEventListener("click", () => {
+                const prochain = themeActuel() === "dark" ? "light" : "dark";
+                document.documentElement.setAttribute("data-theme", prochain);
+                try { localStorage.setItem("tgym-theme", prochain); } catch (e) {}
+            });
         });
     })();
     </script>
 
 </body>
 </html>
-
-
-
 
 === ./tgym_site/__init__.py ===
 
@@ -6384,6 +6577,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # cloudinary_storage doit venir APRÈS staticfiles : Django résout les
+    # commandes manage.py en parcourant INSTALLED_APPS en ordre inverse, la
+    # première app de la liste gagne en cas de conflit de nom. cloudinary_storage
+    # fournit son propre `collectstatic` (pensé pour stocker aussi les statics
+    # sur Cloudinary) qui ne copie PAS les fichiers non-hashés tant que
+    # STATICFILES_STORAGE n'est pas son propre backend — ici on utilise WhiteNoise
+    # pour les statics, donc ce collectstatic custom cassait la copie des fichiers
+    # et provoquait des erreurs "file could not be found" aléatoires en prod.
+    # En le mettant après, c'est bien le collectstatic standard de Django (+WhiteNoise)
+    # qui est utilisé.
+    'cloudinary_storage',
+    'cloudinary',
     'core',
     'abonnements',
     'coaching',
@@ -6498,6 +6703,25 @@ STORAGES = {
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Stockage des médias uploadés (hero_video, VideoSalle, PhotoSalle, etc.)
+# Le disque de Render est éphémère (tout fichier écrit après le build est
+# perdu au prochain déploiement/redémarrage) : les fichiers uploadés via
+# l'admin doivent donc vivre sur Cloudinary, pas sur le filesystem local.
+# En local (pas de CLOUDINARY_URL défini), on garde FileSystemStorage —
+# aucun compte Cloudinary n'est nécessaire pour développer.
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
+
+if CLOUDINARY_URL:
+    STORAGES["default"] = {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    }
+elif IS_PRODUCTION:
+    raise ImproperlyConfigured(
+        "CLOUDINARY_URL manquante alors que IS_PRODUCTION=True. Le disque "
+        "de Render est éphémère : sans Cloudinary, tout fichier uploadé "
+        "(vidéos, photos) serait perdu au prochain déploiement."
+    )
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'comptes:connexion'
@@ -6539,9 +6763,6 @@ if IS_PRODUCTION:
     # provoquerait une boucle de redirection.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
-
-
-
 
 === ./tgym_site/urls.py ===
 """

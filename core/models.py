@@ -113,7 +113,7 @@ class VideoSalle(models.Model):
     class TypeVideo(models.TextChoices):
         GENERALE = "generale", "Généraliste (pas de programme)"
         ACTIVITE = "activite", "Activité (programme)"
-        TEMOIGNAGE = "temoignage", "Témoignage (programme)"
+        TEMOIGNAGE = "temoignage", "Révélation (programme)"
 
     fichier = models.FileField(
         "Fichier vidéo", upload_to="videos/",
