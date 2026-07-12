@@ -3,7 +3,7 @@
 set -o errexit
 
 # 1. Installer les dépendances Python
-pip install -r requirements.txt
+pip install -r requirements.txt --upgrade pip
 
 # 2. Collecter les fichiers statiques (Tailwind, Admin, etc.)
 python manage.py collectstatic --no-input --ignore=src
