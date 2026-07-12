@@ -79,8 +79,18 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'cloudinary_storage',
     'django.contrib.staticfiles',
+    # cloudinary_storage doit venir APRÈS staticfiles : Django résout les
+    # commandes manage.py en parcourant INSTALLED_APPS en ordre inverse, la
+    # première app de la liste gagne en cas de conflit de nom. cloudinary_storage
+    # fournit son propre `collectstatic` (pensé pour stocker aussi les statics
+    # sur Cloudinary) qui ne copie PAS les fichiers non-hashés tant que
+    # STATICFILES_STORAGE n'est pas son propre backend — ici on utilise WhiteNoise
+    # pour les statics, donc ce collectstatic custom cassait la copie des fichiers
+    # et provoquait des erreurs "file could not be found" aléatoires en prod.
+    # En le mettant après, c'est bien le collectstatic standard de Django (+WhiteNoise)
+    # qui est utilisé.
+    'cloudinary_storage',
     'cloudinary',
     'core',
     'abonnements',
