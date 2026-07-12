@@ -1,6 +1,13 @@
+from cloudinary_storage.storage import MediaCloudinaryStorage
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+
+# django-cloudinary-storage utilise resource_type="image" par défaut sur
+# MediaCloudinaryStorage — correct pour ImageField, mais Cloudinary refuse
+# un .mp4 envoyé avec ce type ("Invalid image file"). Les champs vidéo
+# doivent explicitement utiliser resource_type="video".
+video_storage = MediaCloudinaryStorage(resource_type="video")
 
 
 class SiteConfig(models.Model):
@@ -47,6 +54,7 @@ class SiteConfig(models.Model):
     )
     hero_video = models.FileField(
         "Vidéo de fond (accueil, optionnel)", upload_to="site/", null=True, blank=True,
+        storage=video_storage,
         help_text="Courte vidéo (10-20s, en boucle, sans son) de l'ambiance de la salle. "
                    "Si renseignée, prend le pas sur la photo de fond. Fichier léger recommandé (<10 Mo).",
     )
@@ -109,6 +117,7 @@ class VideoSalle(models.Model):
 
     fichier = models.FileField(
         "Fichier vidéo", upload_to="videos/",
+        storage=video_storage,
         help_text="Format vertical ou horizontal, les deux fonctionnent. "
                    "Fichier léger recommandé (idéalement <15 Mo, sans son "
                    "nécessaire — elle sera lue en muet/boucle, sauf en "
@@ -201,6 +210,3 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
-
-
-

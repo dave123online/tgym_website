@@ -79,7 +79,9 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'cloudinary_storage',
     'django.contrib.staticfiles',
+    'cloudinary',
     'core',
     'abonnements',
     'coaching',
@@ -194,6 +196,25 @@ STORAGES = {
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Stockage des médias uploadés (hero_video, VideoSalle, PhotoSalle, etc.)
+# Le disque de Render est éphémère (tout fichier écrit après le build est
+# perdu au prochain déploiement/redémarrage) : les fichiers uploadés via
+# l'admin doivent donc vivre sur Cloudinary, pas sur le filesystem local.
+# En local (pas de CLOUDINARY_URL défini), on garde FileSystemStorage —
+# aucun compte Cloudinary n'est nécessaire pour développer.
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
+
+if CLOUDINARY_URL:
+    STORAGES["default"] = {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    }
+elif IS_PRODUCTION:
+    raise ImproperlyConfigured(
+        "CLOUDINARY_URL manquante alors que IS_PRODUCTION=True. Le disque "
+        "de Render est éphémère : sans Cloudinary, tout fichier uploadé "
+        "(vidéos, photos) serait perdu au prochain déploiement."
+    )
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'comptes:connexion'
@@ -235,6 +256,3 @@ if IS_PRODUCTION:
     # provoquerait une boucle de redirection.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
-
-
-
