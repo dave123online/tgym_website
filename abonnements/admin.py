@@ -1,7 +1,12 @@
 from django.contrib import admin
 from django.utils import timezone
 
-from .models import Abonnement, ConversationWhatsApp, MessageWhatsApp, Plan, RelanceMessage
+from django.shortcuts import render
+from django.urls import path
+
+from .forms import EnvoiMasseForm
+from .models import Abonnement, ContactMasse, ConversationWhatsApp, MessageWhatsApp, Plan, RelanceMessage, TemplateWhatsApp
+from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_template
 
 
 @admin.register(Plan)
@@ -78,12 +83,30 @@ class MessageWhatsAppInline(admin.TabularInline):
 
 @admin.register(ConversationWhatsApp)
 class ConversationWhatsAppAdmin(admin.ModelAdmin):
-    list_display = ("__str__", "wa_id", "abonnement", "nb_messages", "nb_messages_factures", "derniere_activite")
+    list_display = (
+        "__str__", "wa_id", "mode_bot", "abonnement",
+        "nb_messages", "nb_messages_factures", "derniere_activite",
+    )
+    list_editable = ("mode_bot",)
     search_fields = ("wa_id", "nom_contact")
-    list_filter = ("derniere_activite",)
+    list_filter = ("mode_bot", "derniere_activite")
     autocomplete_fields = ("abonnement",)
     inlines = [MessageWhatsAppInline]
     readonly_fields = ("wa_id", "derniere_activite")
+    change_form_template = "admin/abonnements/conversation_change_form.html"
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        from .views_reponse import fenetre_service_ouverte
+
+        conversation = self.get_object(request, object_id)
+        extra_context = extra_context or {}
+        extra_context["fenetre_ouverte"] = (
+            fenetre_service_ouverte(conversation) if conversation else False
+        )
+        extra_context["fil_messages"] = (
+            conversation.messages.order_by("date_envoi") if conversation else []
+        )
+        return super().change_view(request, object_id, form_url, extra_context)
 
     def nb_messages(self, obj):
         return obj.messages.count()
@@ -92,3 +115,63 @@ class ConversationWhatsAppAdmin(admin.ModelAdmin):
     def nb_messages_factures(self, obj):
         return obj.messages.filter(est_facturable=True).count()
     nb_messages_factures.short_description = "Dont facturés"
+
+
+@admin.register(ContactMasse)
+class ContactMasseAdmin(admin.ModelAdmin):
+    list_display = ("nom", "telephone", "actif", "note", "date_ajout")
+    list_editable = ("actif",)
+    list_filter = ("actif",)
+    search_fields = ("nom", "telephone", "note")
+    actions = ["envoyer_template_en_masse"]
+
+    @admin.action(description="Envoyer un template WhatsApp aux contacts sélectionnés")
+    def envoyer_template_en_masse(self, request, queryset):
+        contacts = queryset.filter(actif=True)
+
+        if "appliquer" in request.POST:
+            form = EnvoiMasseForm(request.POST)
+            if form.is_valid():
+                nom_template = form.cleaned_data["nom_template"]
+                langue = form.cleaned_data["langue"]
+                parametres = form.parametres_liste()
+
+                reussites, echecs = 0, []
+                for contact in contacts:
+                    try:
+                        envoyer_template(contact.telephone, nom_template, langue, parametres)
+                        reussites += 1
+                    except EnvoiWhatsAppIndisponible as exc:
+                        echecs.append(f"{contact} : {exc}")
+
+                if reussites:
+                    self.message_user(request, f"{reussites} message(s) envoyé(s) avec succès.")
+                if echecs:
+                    self.message_user(
+                        request,
+                        "Échecs : " + " | ".join(echecs[:10]) + (" ..." if len(echecs) > 10 else ""),
+                        level="ERROR",
+                    )
+                return None
+        else:
+            form = EnvoiMasseForm()
+
+        return render(
+            request,
+            "admin/abonnements/envoi_masse.html",
+            {
+                "form": form,
+                "contacts": contacts,
+                "nb_contacts": contacts.count(),
+                "opts": self.model._meta,
+                "title": "Envoyer un template WhatsApp en masse",
+            },
+        )
+
+
+@admin.register(TemplateWhatsApp)
+class TemplateWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ("intitule", "nom_meta", "langue", "actif")
+    list_filter = ("actif", "langue")
+    search_fields = ("intitule", "nom_meta")
+    change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"

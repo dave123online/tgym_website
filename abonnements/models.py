@@ -193,6 +193,17 @@ class ConversationWhatsApp(models.Model):
     )
     derniere_activite = models.DateTimeField("Dernière activité", auto_now=True)
 
+    class ModeBot(models.TextChoices):
+        BOT = "bot", "Gemini répond automatiquement"
+        HUMAIN = "humain", "Escaladé — réponse humaine requise"
+
+    mode_bot = models.CharField(
+        "Mode de réponse", max_length=10, choices=ModeBot.choices, default=ModeBot.BOT,
+        help_text="Passe automatiquement en 'Humain' si le client se montre insatisfait ou si "
+                   "Gemini ne sait pas répondre. Remets sur 'Bot' une fois la situation gérée.",
+    )
+    raison_escalade = models.CharField("Raison de l'escalade", max_length=255, blank=True)
+
     def __str__(self):
         return self.nom_contact or self.wa_id
 
@@ -256,4 +267,66 @@ class MessageWhatsApp(models.Model):
         verbose_name = "Message WhatsApp"
         verbose_name_plural = "Messages WhatsApp"
         ordering = ["date_envoi"]
+
+
+class ContactMasse(models.Model):
+    """
+    Liste éditable de contacts pour l'envoi de messages WhatsApp en masse
+    (annonces, promos...) — indépendante des Abonnement/User, pour couvrir
+    aussi les prospects ou anciens clients qui n'ont pas de compte.
+    """
+
+    nom = models.CharField("Nom", max_length=150)
+    telephone = models.CharField(
+        "Téléphone", max_length=20,
+        help_text="Format international, ex: 22997393766 ou +22997393766.",
+    )
+    actif = models.BooleanField(
+        "Actif", default=True,
+        help_text="Décoche pour exclure ce contact des prochains envois en masse sans le supprimer.",
+    )
+    note = models.CharField("Note", max_length=255, blank=True)
+    date_ajout = models.DateTimeField("Ajouté le", auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.nom} ({self.telephone})"
+
+    class Meta:
+        verbose_name = "Contact (envoi de masse)"
+        verbose_name_plural = "Contacts (envoi de masse)"
+        ordering = ["nom"]
+
+
+class TemplateWhatsApp(models.Model):
+    """
+    Référence un template WhatsApp pré-approuvé par Meta, avec la liste de
+    ses variables — sert de source de vérité pour l'écran de diffusion,
+    afin que le staff choisisse un template par son intitulé plutôt que de
+    retaper le nom technique Meta à chaque envoi.
+    """
+
+    intitule = models.CharField(
+        "Intitulé (affiché au staff)", max_length=100, unique=True,
+        help_text="Ex: Promo rentrée, Relance abonnement...",
+    )
+    nom_meta = models.CharField(
+        "Nom technique du template (Meta)", max_length=100,
+        help_text="Doit correspondre EXACTEMENT au nom du template approuvé dans le dashboard Meta.",
+    )
+    langue = models.CharField("Code langue", max_length=10, default="fr")
+    variables = models.JSONField(
+        "Variables du corps, dans l'ordre", default=list, blank=True,
+        help_text='Liste des noms de variables dans l\'ordre {{1}}, {{2}}... '
+                   'Ex: ["prenom", "nom_promo"]. Laisser vide si le template n\'a pas de variable.',
+    )
+    actif = models.BooleanField("Actif (proposé dans la diffusion)", default=True)
+    date_creation = models.DateTimeField("Créé le", auto_now_add=True)
+
+    def __str__(self):
+        return self.intitule
+
+    class Meta:
+        verbose_name = "Template WhatsApp"
+        verbose_name_plural = "Templates WhatsApp"
+        ordering = ["intitule"]
 

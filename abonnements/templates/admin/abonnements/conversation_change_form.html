@@ -1,0 +1,58 @@
+{% extends "admin/change_form.html" %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+
+  <div style="margin-top:2em; max-width:700px;">
+    <h2>💬 Conversation</h2>
+
+    <div style="border:1px solid #ccc; border-radius:8px; padding:12px; max-height:420px; overflow-y:auto; background:#e5ddd5;">
+      {% for msg in fil_messages %}
+        <div style="
+          display:flex;
+          justify-content:{% if msg.sens == 'sortant' %}flex-end{% else %}flex-start{% endif %};
+          margin-bottom:8px;">
+          <div style="
+            max-width:75%;
+            padding:8px 12px;
+            border-radius:10px;
+            background:{% if msg.sens == 'sortant' %}#dcf8c6{% else %}#ffffff{% endif %};
+            box-shadow:0 1px 1px rgba(0,0,0,.1);">
+            <div>{{ msg.contenu }}</div>
+            <div style="font-size:11px; color:#667781; margin-top:4px; text-align:right;">
+              {{ msg.date_envoi|date:"d/m H:i" }}
+              {% if msg.sens == 'sortant' %}
+                · {{ msg.get_categorie_display }}
+                {% if msg.statut_livraison %} · {{ msg.statut_livraison }}{% endif %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p>Aucun message pour l'instant.</p>
+      {% endfor %}
+    </div>
+
+    <h3 style="margin-top:1em;">Répondre</h3>
+    {% if fenetre_ouverte %}
+      <p style="color:green;">✅ Fenêtre de service ouverte — réponse libre gratuite possible.</p>
+    {% else %}
+      <p style="color:#b23;">
+        ⚠️ Fenêtre de service fermée (le client n'a pas écrit depuis plus de 24h).
+        L'envoi d'un message texte libre échouera — utilise plutôt la diffusion par template.
+      </p>
+    {% endif %}
+
+    <form method="post" action="{% url 'abonnements:repondre_conversation' original.pk %}">
+      {% csrf_token %}
+      <textarea name="texte" rows="3" style="width:100%;" placeholder="Écrire une réponse..."></textarea>
+      <p>
+        <label>
+          <input type="checkbox" name="garder_mode_humain" value="1">
+          Garder cette conversation en mode humain après l'envoi (ne pas repasser en bot)
+        </label>
+      </p>
+      <input type="submit" value="Envoyer" {% if not fenetre_ouverte %}disabled{% endif %}>
+    </form>
+  </div>
+{% endblock %}

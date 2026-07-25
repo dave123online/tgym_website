@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p>Template : <strong>{{ template.intitule }}</strong> — {{ nb_destinataires }} destinataire(s).</p>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="etape" value="2">
+  <input type="hidden" name="template_id" value="{{ template.pk }}">
+  <input type="hidden" name="cible" value="{{ cible }}">
+  {% for id in custom_ids %}<input type="hidden" name="custom_ids" value="{{ id }}">{% endfor %}
+
+  {% if template.variables %}
+    <h3>Variables du message</h3>
+    {% for var in template.variables %}
+      <fieldset style="margin-bottom:1em;">
+        <legend><strong>{{ var }}</strong></legend>
+        <label>
+          <input type="radio" name="mode_{{ var }}" value="fixe" checked>
+          Même texte pour tout le monde :
+          <input type="text" name="valeur_{{ var }}" placeholder="Ex: -20% ce week-end">
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="mode_{{ var }}" value="champ">
+          Depuis la fiche client :
+          <select name="champ_{{ var }}">
+            {% for cle, libelle in champs_client.items %}
+              <option value="{{ cle }}">{{ libelle }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </fieldset>
+    {% endfor %}
+  {% else %}
+    <p>Ce template n'a pas de variable à configurer.</p>
+  {% endif %}
+
+  <p>
+    <input type="submit" value="Envoyer à {{ nb_destinataires }} destinataire(s)"
+           onclick="return confirm('Confirmer l\'envoi ?');">
+  </p>
+</form>
+{% endblock %}

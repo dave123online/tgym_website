@@ -40,6 +40,153 @@ def _credentials_pretes() -> bool:
     return bool(settings.WHATSAPP_ACCESS_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID)
 
 
+def envoyer_texte_libre(numero: str, texte: str) -> dict:
+    """
+    Envoie un message texte libre (pas un template) — uniquement valide si
+    le destinataire a écrit dans les 24h précédentes (fenêtre de service
+    ouverte), sinon Meta rejette l'appel. Utilisé pour les réponses du bot
+    Gemini et les réponses manuelles du staff, jamais pour du démarchage.
+
+    Gratuit côté facturation Meta (pas de template = pas de coût), donc
+    marqué non-facturable dans MessageWhatsApp.
+    """
+    if not _credentials_pretes():
+        raise EnvoiWhatsAppIndisponible(
+            "WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID absents — envoi indisponible."
+        )
+
+    numero_norm = numero_international(numero)
+    url = (
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/"
+        f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero_norm,
+        "type": "text",
+        "text": {"body": texte},
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        import requests
+
+        response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.exception("Erreur réseau lors de l'envoi WhatsApp texte libre (to=%s)", numero_norm)
+        raise EnvoiWhatsAppIndisponible(f"Erreur réseau : {exc}") from exc
+
+    if response.status_code >= 400:
+        logger.error(
+            "Échec API WhatsApp texte libre (to=%s) : HTTP %s — %s",
+            numero_norm, response.status_code, response.text,
+        )
+        raise EnvoiWhatsAppIndisponible(
+            f"L'API Meta a répondu HTTP {response.status_code} : {response.text}"
+        )
+
+    reponse_json = response.json()
+
+    from .models import ConversationWhatsApp, MessageWhatsApp
+
+    conversation, _ = ConversationWhatsApp.objects.get_or_create(wa_id=numero_norm.lstrip("+"))
+    wamid = (reponse_json.get("messages") or [{}])[0].get("id")
+    MessageWhatsApp.objects.create(
+        conversation=conversation,
+        sens=MessageWhatsApp.Sens.SORTANT,
+        wamid=wamid,
+        contenu=texte,
+        categorie=MessageWhatsApp.Categorie.SESSION,
+        est_facturable=False,
+        payload_brut=reponse_json,
+    )
+    return reponse_json
+
+
+def envoyer_template(numero: str, nom_template: str, langue: str, parametres_body: list[str]) -> dict:
+    """
+    Envoi générique d'un template WhatsApp vers un numéro donné, sans lien
+    avec un Abonnement — utilisé pour l'envoi de masse (ContactMasse) et
+    tout futur cas d'usage (annonces, promos...).
+
+    `parametres_body` : liste de chaînes, dans l'ordre des variables {{1}},
+    {{2}}, etc. définies dans le template Meta. Laisser vide si le
+    template n'a pas de variable dans son corps.
+
+    Lève `EnvoiWhatsAppIndisponible` dans tous les cas d'échec (mêmes
+    règles que `envoyer_template_relance`).
+    """
+    if not _credentials_pretes():
+        raise EnvoiWhatsAppIndisponible(
+            "WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID absents — envoi indisponible."
+        )
+
+    numero_norm = numero_international(numero)
+
+    url = (
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/"
+        f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    components = []
+    if parametres_body:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in parametres_body],
+        })
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero_norm,
+        "type": "template",
+        "template": {
+            "name": nom_template,
+            "language": {"code": langue},
+            "components": components,
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        import requests
+
+        response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.exception("Erreur réseau lors de l'envoi WhatsApp (template=%s, to=%s)", nom_template, numero_norm)
+        raise EnvoiWhatsAppIndisponible(f"Erreur réseau : {exc}") from exc
+
+    if response.status_code >= 400:
+        logger.error(
+            "Échec API WhatsApp (template=%s, to=%s) : HTTP %s — %s",
+            nom_template, numero_norm, response.status_code, response.text,
+        )
+        raise EnvoiWhatsAppIndisponible(
+            f"L'API Meta a répondu HTTP {response.status_code} : {response.text}"
+        )
+
+    reponse_json = response.json()
+
+    from .models import ConversationWhatsApp, MessageWhatsApp
+
+    conversation, _ = ConversationWhatsApp.objects.get_or_create(wa_id=numero_norm.lstrip("+"))
+    wamid = (reponse_json.get("messages") or [{}])[0].get("id")
+    MessageWhatsApp.objects.create(
+        conversation=conversation,
+        sens=MessageWhatsApp.Sens.SORTANT,
+        wamid=wamid,
+        contenu=f"[Template: {nom_template}] " + " / ".join(parametres_body),
+        categorie=MessageWhatsApp.Categorie.MARKETING,
+        est_facturable=True,
+        payload_brut=reponse_json,
+    )
+
+    return reponse_json
+
+
 def envoyer_template_relance(abonnement) -> dict:
     """
     Envoie le template de relance pré-approuvé pour cet abonnement, avec

@@ -1,0 +1,39 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+
+{% if messages %}
+  {% for message in messages %}<p style="color:{% if message.tags == 'error' %}red{% else %}green{% endif %}">{{ message }}</p>{% endfor %}
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="etape" value="1">
+
+  <h3>1. Cible</h3>
+  {% for value, label in cible_choices %}
+    <label style="display:block;">
+      <input type="radio" name="cible" value="{{ value }}" {% if forloop.first %}checked{% endif %}> {{ label }}
+    </label>
+  {% endfor %}
+
+  <p><strong>Sélection manuelle</strong> (utilisée uniquement si "Sélection manuelle" est cochée ci-dessus) :</p>
+  <select name="custom_ids" multiple size="10" style="min-width:400px;">
+    {% for client in clients %}
+      <option value="{{ client.pk }}">
+        {{ client.get_full_name|default:client.username }} — {{ client.profil.telephone }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <h3>2. Template</h3>
+  <select name="template_id" required>
+    <option value="">— Sélectionnez le template à utiliser —</option>
+    {% for t in templates %}
+      <option value="{{ t.pk }}">{{ t.intitule }}</option>
+    {% endfor %}
+  </select>
+
+  <p><input type="submit" value="Continuer"></p>
+</form>
+{% endblock %}

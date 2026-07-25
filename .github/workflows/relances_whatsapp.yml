@@ -1,0 +1,16 @@
+name: Relances WhatsApp quotidiennes
+
+on:
+  schedule:
+    # 7h00 UTC = 8h00 heure du Bénin (UTC+1), tous les jours.
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}  # permet aussi un déclenchement manuel depuis l'onglet Actions
+
+jobs:
+  declencher-relances:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Appeler l'endpoint de relance
+        run: |
+          curl -f -X POST "https://tgym.onrender.com/cron/relances/" \
+            -H "X-Cron-Token: ${{ secrets.CRON_SECRET_TOKEN }}"

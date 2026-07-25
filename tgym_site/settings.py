@@ -244,6 +244,7 @@ WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
 WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+CRON_SECRET_TOKEN = os.environ.get("CRON_SECRET_TOKEN", "")
 # Nom + langue du template Meta pré-approuvé utilisé pour la relance
 # d'abonnement (à créer et faire approuver côté Meta Business Manager).
 WHATSAPP_TEMPLATE_RELANCE = os.environ.get("WHATSAPP_TEMPLATE_RELANCE", "relance_abonnement")
