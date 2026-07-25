@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p><strong>{{ nb_contacts }}</strong> contact(s) actif(s) sélectionné(s) recevront ce template.</p>
+
+<form method="post">
+  {% csrf_token %}
+  {% for obj in contacts %}
+    <input type="hidden" name="_selected_action" value="{{ obj.pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="envoyer_template_en_masse">
+
+  <table>
+    {{ form.as_table }}
+  </table>
+
+  <p>
+    <input type="submit" name="appliquer" value="Envoyer maintenant">
+    <a href="../">Annuler</a>
+  </p>
+</form>
+{% endblock %}

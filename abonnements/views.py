@@ -91,6 +91,12 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
             "payload_brut": msg,
         },
     )
+
+    from .whatsapp_bot import traiter_message_entrant
+    try:
+        traiter_message_entrant(conversation, contenu)
+    except Exception:
+        logger.exception("Échec du traitement bot pour la conversation %s.", conversation.wa_id)
     # Toute réponse envoyée dans les 24h suivant CE message sera gratuite —
     # rien à calculer ici, c'est juste pour information au moment de l'envoi.
 

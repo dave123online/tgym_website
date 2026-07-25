@@ -1,0 +1,45 @@
+[
+  {
+    "model": "abonnements.templatewhatsapp",
+    "fields": {
+      "intitule": "Promo",
+      "nom_meta": "promo_tgym",
+      "langue": "fr",
+      "variables": [
+        "prenom",
+        "nom_promo"
+      ],
+      "actif": true,
+      "date_creation": "2026-07-25T00:00:00Z"
+    }
+  },
+  {
+    "model": "abonnements.templatewhatsapp",
+    "fields": {
+      "intitule": "Rappel",
+      "nom_meta": "rappel_tgym",
+      "langue": "fr",
+      "variables": [
+        "prenom",
+        "message"
+      ],
+      "actif": true,
+      "date_creation": "2026-07-25T00:00:00Z"
+    }
+  },
+  {
+    "model": "abonnements.templatewhatsapp",
+    "fields": {
+      "intitule": "Relance abonnement",
+      "nom_meta": "relance_abonnement",
+      "langue": "fr",
+      "variables": [
+        "prenom",
+        "nom_plan",
+        "date_fin"
+      ],
+      "actif": true,
+      "date_creation": "2026-07-25T00:00:00Z"
+    }
+  }
+]
