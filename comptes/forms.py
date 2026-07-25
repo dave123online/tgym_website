@@ -67,6 +67,3 @@ class CreationCompteAdherentForm(forms.Form):
 
     def clean_telephone(self):
         return normaliser_telephone(self.cleaned_data["telephone"])
-
-
-

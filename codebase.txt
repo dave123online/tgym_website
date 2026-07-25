@@ -1875,13 +1875,68 @@ class EnvoyerRelancesWhatsappCommandTests(TestCase):
         self.assertIsNotNone(self.relance.envoye_le)
 
 
+=== ./abonnements/urls.py ===
+from django.urls import path
+
+from . import views
+
+app_name = "abonnements"
+
+urlpatterns = [
+    path("webhook/whatsapp/", views.whatsapp_webhook, name="webhook_whatsapp"),
+]
+
 === ./abonnements/views.py ===
 from django.shortcuts import render
 
-# Create your views here.
+import json
+import logging
+
+from django.conf import settings
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+logger = logging.getLogger(__name__)
 
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def whatsapp_webhook(request):
+    """
+    Endpoint unique pour la vérification (GET) et la réception (POST)
+    des webhooks WhatsApp Business Platform (Meta).
 
+    GET  : challenge de vérification envoyé par Meta lors de la
+           configuration du webhook dans le dashboard développeur.
+    POST : événements entrants (messages, statuts de livraison, etc.).
+    """
+    if request.method == "GET":
+        mode = request.GET.get("hub.mode")
+        token = request.GET.get("hub.verify_token")
+        challenge = request.GET.get("hub.challenge")
+
+        if mode == "subscribe" and token == settings.WHATSAPP_VERIFY_TOKEN:
+            # Meta exige que le challenge soit renvoyé tel quel, en texte brut.
+            return HttpResponse(challenge, content_type="text/plain")
+
+        logger.warning("Échec de vérification du webhook WhatsApp (token invalide).")
+        return HttpResponseForbidden("Verification token mismatch")
+
+    # POST : réception d'un événement.
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        logger.warning("Payload webhook WhatsApp illisible (JSON invalide).")
+        return HttpResponse(status=400)
+
+    # Pour l'instant on se contente de logger le payload complet.
+    # À terme : dispatcher selon le "field" (messages, statuses, ...)
+    # vers un traitement dédié (ex: mise à jour du statut d'une relance).
+    logger.info("Webhook WhatsApp reçu : %s", json.dumps(payload, ensure_ascii=False))
+
+    # Meta exige une réponse 200 rapide, sinon il retente l'envoi.
+    return JsonResponse({"status": "received"})
 
 === ./abonnements/whatsapp_api.py ===
 """
@@ -6740,6 +6795,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
 # Nom + langue du template Meta pré-approuvé utilisé pour la relance
 # d'abonnement (à créer et faire approuver côté Meta Business Manager).
 WHATSAPP_TEMPLATE_RELANCE = os.environ.get("WHATSAPP_TEMPLATE_RELANCE", "relance_abonnement")
@@ -6792,6 +6848,7 @@ urlpatterns = [
     path('', include('coaching.urls')),
     path('', include('actualites.urls')),
     path('', include('comptes.urls')),
+    path('', include('abonnements.urls')),
 ]
 
 if settings.DEBUG:

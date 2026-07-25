@@ -296,4 +296,3 @@ class AntiBruteForceMiddlewareTests(TestCase):
 
         resp = self._echec()
         self.assertEqual(resp.status_code, 429)
-

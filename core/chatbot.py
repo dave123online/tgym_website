@@ -115,5 +115,3 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
     except Exception:
         logger.exception("Échec de l'appel Gemini pour le chatbot du site.")
         return MESSAGE_REPLI
-
-

@@ -18,6 +18,3 @@ def programme_detail(request, slug):
         "programme": programme,
         "contact_link": contact_link,
     })
-
-
-

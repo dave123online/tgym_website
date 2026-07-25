@@ -26,6 +26,3 @@ def role_required(*roles):
             return vue(request, *args, **kwargs)
         return wrapper
     return decorateur
-
-
-
