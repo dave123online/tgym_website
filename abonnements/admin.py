@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 
-from .models import Abonnement, Plan, RelanceMessage
+from .models import Abonnement, ConversationWhatsApp, MessageWhatsApp, Plan, RelanceMessage
 
 
 @admin.register(Plan)
@@ -63,6 +63,32 @@ class RelanceMessageAdmin(admin.ModelAdmin):
     def marquer_comme_ignore(self, request, queryset):
         maj = queryset.update(statut=RelanceMessage.Statut.IGNORE)
         self.message_user(request, f"{maj} message(s) marqué(s) comme ignoré(s).")
+class MessageWhatsAppInline(admin.TabularInline):
+    model = MessageWhatsApp
+    extra = 0
+    fields = ("sens", "categorie", "contenu", "est_facturable", "statut_livraison", "date_envoi")
+    readonly_fields = ("sens", "categorie", "contenu", "est_facturable", "statut_livraison", "date_envoi")
+    can_delete = False
+    ordering = ("date_envoi",)
+
+    def has_add_permission(self, request, obj=None):
+        # Lecture seule : les messages arrivent uniquement via le webhook.
+        return False
 
 
+@admin.register(ConversationWhatsApp)
+class ConversationWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "wa_id", "abonnement", "nb_messages", "nb_messages_factures", "derniere_activite")
+    search_fields = ("wa_id", "nom_contact")
+    list_filter = ("derniere_activite",)
+    autocomplete_fields = ("abonnement",)
+    inlines = [MessageWhatsAppInline]
+    readonly_fields = ("wa_id", "derniere_activite")
 
+    def nb_messages(self, obj):
+        return obj.messages.count()
+    nb_messages.short_description = "Messages"
+
+    def nb_messages_factures(self, obj):
+        return obj.messages.filter(est_facturable=True).count()
+    nb_messages_factures.short_description = "Dont facturés"

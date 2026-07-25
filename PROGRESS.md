@@ -641,6 +641,3 @@ après les 6 nouveaux tests ajoutés pour les correctifs de cette session
 fournie dans `codebase.txt` — signalé pour que David en tienne compte
 pour la suite (les autres findings, eux, ont tous été confirmés
 empiriquement sur le code réel).
-
-
-

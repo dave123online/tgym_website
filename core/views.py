@@ -151,6 +151,3 @@ def chatbot_message(request):
     request.session["chatbot_compteur"] = compteur
 
     return JsonResponse({"reponse": reponse})
-
-
-

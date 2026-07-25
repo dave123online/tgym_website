@@ -171,6 +171,89 @@ class RelanceMessage(models.Model):
         verbose_name = "Message de relance"
         verbose_name_plural = "Messages de relance"
         ordering = ["-date_generation"]
+class ConversationWhatsApp(models.Model):
+    """
+    Regroupe les échanges WhatsApp avec un numéro donné. Une conversation
+    par numéro de contact — pas de notion de fenêtre 24h ici, c'est un
+    regroupement d'affichage, pas une entité facturée par Meta.
+    """
+
+    wa_id = models.CharField(
+        "Numéro WhatsApp (wa_id)", max_length=20, unique=True,
+        help_text="Numéro au format international sans '+', ex: 22997393766",
+    )
+    nom_contact = models.CharField(
+        "Nom du contact", max_length=150, blank=True,
+        help_text="Renseigné automatiquement depuis le profil WhatsApp si disponible.",
+    )
+    abonnement = models.ForeignKey(
+        Abonnement, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="conversations_whatsapp", verbose_name="Abonnement lié",
+        help_text="Rapproché manuellement si besoin — aucun lien automatique par défaut.",
+    )
+    derniere_activite = models.DateTimeField("Dernière activité", auto_now=True)
+
+    def __str__(self):
+        return self.nom_contact or self.wa_id
+
+    class Meta:
+        verbose_name = "Conversation WhatsApp"
+        verbose_name_plural = "Conversations WhatsApp"
+        ordering = ["-derniere_activite"]
 
 
+class MessageWhatsApp(models.Model):
+    """
+    Un message individuel (entrant ou sortant) au sein d'une conversation.
+    Le champ `est_facturable` reflète les règles de facturation Meta en
+    vigueur : un template envoyé proactivement (hors fenêtre de service
+    ouverte) est facturé, une réponse libre ou un template Utility envoyé
+    en réponse dans les 24h ne l'est pas.
+    """
+
+    class Sens(models.TextChoices):
+        ENTRANT = "entrant", "Reçu du client"
+        SORTANT = "sortant", "Envoyé par T GYM"
+
+    class Categorie(models.TextChoices):
+        SESSION = "session", "Message libre (session 24h)"
+        MARKETING = "marketing", "Template Marketing"
+        UTILITY = "utility", "Template Utility"
+        AUTHENTICATION = "authentication", "Template Authentication"
+
+    conversation = models.ForeignKey(
+        ConversationWhatsApp, on_delete=models.CASCADE,
+        related_name="messages", verbose_name="Conversation",
+    )
+    sens = models.CharField("Sens", max_length=10, choices=Sens.choices)
+    wamid = models.CharField(
+        "ID message (wamid)", max_length=150, unique=True, null=True, blank=True,
+        help_text="Identifiant Meta du message — sert à éviter les doublons sur retry webhook.",
+    )
+    contenu = models.TextField("Contenu")
+    categorie = models.CharField(
+        "Catégorie", max_length=20, choices=Categorie.choices, default=Categorie.SESSION,
+    )
+    est_facturable = models.BooleanField(
+        "Facturé par Meta", default=False,
+        help_text="Coché si ce message correspond à un envoi facturé selon les règles Meta "
+                   "en vigueur (template hors fenêtre de service).",
+    )
+    statut_livraison = models.CharField(
+        "Statut de livraison", max_length=20, blank=True,
+        help_text="sent / delivered / read / failed — mis à jour via les webhooks 'statuses'.",
+    )
+    date_envoi = models.DateTimeField("Date", auto_now_add=True)
+    payload_brut = models.JSONField(
+        "Payload brut", null=True, blank=True,
+        help_text="Copie du payload webhook Meta pour ce message, utile pour du débug.",
+    )
+
+    def __str__(self):
+        return f"{self.get_sens_display()} — {self.conversation} ({self.date_envoi:%d/%m %H:%M})"
+
+    class Meta:
+        verbose_name = "Message WhatsApp"
+        verbose_name_plural = "Messages WhatsApp"
+        ordering = ["date_envoi"]
 

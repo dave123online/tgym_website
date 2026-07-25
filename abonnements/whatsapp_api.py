@@ -113,6 +113,25 @@ def envoyer_template_relance(abonnement) -> dict:
             f"L'API Meta a répondu HTTP {response.status_code} : {response.text}"
         )
 
-    return response.json()
+    reponse_json = response.json()
 
+    # Journalisation du message sortant dans la conversation, pour l'écran
+    # "Conversations WhatsApp" de l'admin (visibilité facturation).
+    from .models import ConversationWhatsApp, MessageWhatsApp
 
+    conversation, _ = ConversationWhatsApp.objects.get_or_create(
+        wa_id=numero.lstrip("+")
+    )
+    wamid = (reponse_json.get("messages") or [{}])[0].get("id")
+    MessageWhatsApp.objects.create(
+        conversation=conversation,
+        sens=MessageWhatsApp.Sens.SORTANT,
+        wamid=wamid,
+        contenu=f"[Template: {settings.WHATSAPP_TEMPLATE_RELANCE}] "
+                f"{prenom}, {plan_nom}, expire le {date_fin}",
+        categorie=MessageWhatsApp.Categorie.UTILITY,
+        est_facturable=True,  # template envoyé proactivement = facturé
+        payload_brut=reponse_json,
+    )
+
+    return reponse_json

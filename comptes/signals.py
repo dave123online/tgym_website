@@ -17,6 +17,3 @@ def creer_profil(sender, instance, created, **kwargs):
         return
     role = Profil.Role.STAFF if (instance.is_staff or instance.is_superuser) else Profil.Role.ADHERENT
     Profil.objects.get_or_create(user=instance, defaults={"role": role})
-
-
-
