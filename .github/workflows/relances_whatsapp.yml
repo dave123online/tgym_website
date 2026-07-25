@@ -12,5 +12,5 @@ jobs:
     steps:
       - name: Appeler l'endpoint de relance
         run: |
-          curl -i -X POST "https://tgym.onrender.com/cron/relances/" \
+          curl -f -X POST "https://tgym.onrender.com/cron/relances/" \
             -H "X-Cron-Token: ${{ secrets.CRON_SECRET_TOKEN }}"
