@@ -45,4 +45,3 @@ def fenetre_service_ouverte(conversation: ConversationWhatsApp) -> bool:
         return False
     ecart = timezone.now() - dernier_message_entrant.date_envoi
     return ecart.total_seconds() < FENETRE_SERVICE_HEURES * 3600
-

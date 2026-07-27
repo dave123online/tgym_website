@@ -66,4 +66,3 @@ class ProgrammesViewsTests(TestCase):
             reverse("coaching:programme_detail", args=[self.programme.slug])
         )
         self.assertContains(resp, "wa.me")
-

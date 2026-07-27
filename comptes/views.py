@@ -115,4 +115,3 @@ class ChangerMotDePasseView(LoginRequiredMixin, auth_views.PasswordChangeView):
 
 class ChangerMotDePasseTermineView(LoginRequiredMixin, auth_views.PasswordChangeDoneView):
     template_name = "comptes/changer_mot_de_passe_termine.html"
-

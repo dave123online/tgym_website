@@ -67,4 +67,3 @@ def changer_mode_conversation(request, pk):
             messages.error(request, "Mode invalide.")
 
     return redirect("abonnements:staff_conversation_detail", conversation.pk)
-

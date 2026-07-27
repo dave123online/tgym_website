@@ -49,7 +49,10 @@ def _contexte_site() -> str:
 
     lignes_plans = []
     for plan in Plan.objects.filter(actif=True).order_by("ordre_affichage"):
-        lignes_plans.append(f"- {plan.nom} : {plan.prix_affiche()} ({plan.description_courte})")
+        ligne = f"- {plan.nom} : {plan.prix_affiche()} ({plan.description_courte})"
+        if plan.inclus:
+            ligne += "\n  Inclus : " + ", ".join(plan.inclus)
+        lignes_plans.append(ligne)
     plans_texte = "\n".join(lignes_plans) or "Aucune formule active pour le moment."
 
     programme_phare = Programme.objects.filter(est_phare=True, actif=True).first()
@@ -128,4 +131,3 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
     except Exception:
         logger.exception("Échec inattendu (non-API) de l'appel Gemini pour le chatbot du site.")
         return MESSAGE_REPLI
-

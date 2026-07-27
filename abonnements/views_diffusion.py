@@ -119,4 +119,3 @@ def diffusion_whatsapp(request):
         "templates": TemplateWhatsApp.objects.filter(actif=True),
         "clients": User.objects.filter(profil__telephone__gt="").select_related("profil"),
     })
-

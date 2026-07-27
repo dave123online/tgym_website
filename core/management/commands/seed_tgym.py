@@ -124,4 +124,3 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
-

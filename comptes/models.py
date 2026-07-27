@@ -45,4 +45,3 @@ class Profil(models.Model):
         verbose_name = "Profil"
         verbose_name_plural = "Profils"
         ordering = ["user__username"]
-

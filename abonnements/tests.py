@@ -219,4 +219,3 @@ class EnvoyerRelancesWhatsappCommandTests(TestCase):
         self.assertEqual(self.relance.statut, RelanceMessage.Statut.ENVOYE)
         self.assertTrue(self.relance.envoye_automatiquement)
         self.assertIsNotNone(self.relance.envoye_le)
-

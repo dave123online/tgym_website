@@ -210,4 +210,3 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
-
