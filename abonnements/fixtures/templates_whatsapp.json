@@ -10,7 +10,8 @@
         "nom_promo"
       ],
       "actif": true,
-      "date_creation": "2026-07-25T00:00:00Z"
+      "date_creation": "2026-07-25T00:00:00Z",
+      "categorie": "marketing"
     }
   },
   {
@@ -24,7 +25,8 @@
         "message"
       ],
       "actif": true,
-      "date_creation": "2026-07-25T00:00:00Z"
+      "date_creation": "2026-07-25T00:00:00Z",
+      "categorie": "utility"
     }
   },
   {
@@ -39,7 +41,8 @@
         "date_fin"
       ],
       "actif": true,
-      "date_creation": "2026-07-25T00:00:00Z"
+      "date_creation": "2026-07-25T00:00:00Z",
+      "categorie": "utility"
     }
   }
 ]

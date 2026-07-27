@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import logging
 
@@ -9,6 +11,39 @@ from django.views.decorators.http import require_http_methods
 from .models import ConversationWhatsApp, MessageWhatsApp
 
 logger = logging.getLogger(__name__)
+
+
+def _signature_valide(request) -> bool:
+    """
+    Vérifie l'en-tête X-Hub-Signature-256 envoyé par Meta, calculé comme
+    un HMAC-SHA256 du corps brut de la requête avec l'App Secret Meta.
+    Empêche quiconque connaissant juste l'URL du webhook de nous envoyer
+    de faux événements (spam, faux messages, tentative de manipulation
+    du bot).
+
+    Si WHATSAPP_APP_SECRET n'est pas configuré, on n'exige pas la
+    signature (permet de continuer à fonctionner tant que ce n'est pas
+    renseigné, mais un avertissement est loggué à chaque requête POST) —
+    à corriger avant mise en production réelle.
+    """
+    app_secret = settings.WHATSAPP_APP_SECRET
+    if not app_secret:
+        logger.warning(
+            "WHATSAPP_APP_SECRET absent — signature du webhook NON vérifiée. "
+            "À configurer avant la mise en production."
+        )
+        return True
+
+    signature_recue = request.headers.get("X-Hub-Signature-256", "")
+    if not signature_recue.startswith("sha256="):
+        return False
+
+    signature_recue = signature_recue.removeprefix("sha256=")
+    signature_attendue = hmac.new(
+        app_secret.encode("utf-8"), request.body, hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature_recue, signature_attendue)
 
 
 @csrf_exempt
@@ -28,6 +63,10 @@ def whatsapp_webhook(request):
 
         logger.warning("Échec de vérification du webhook WhatsApp (token invalide).")
         return HttpResponseForbidden("Verification token mismatch")
+
+    if not _signature_valide(request):
+        logger.warning("Signature webhook WhatsApp invalide — requête rejetée.")
+        return HttpResponseForbidden("Invalid signature")
 
     try:
         payload = json.loads(request.body.decode("utf-8"))

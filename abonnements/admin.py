@@ -171,7 +171,7 @@ class ContactMasseAdmin(admin.ModelAdmin):
 
 @admin.register(TemplateWhatsApp)
 class TemplateWhatsAppAdmin(admin.ModelAdmin):
-    list_display = ("intitule", "nom_meta", "langue", "actif")
-    list_filter = ("actif", "langue")
+    list_display = ("intitule", "nom_meta", "categorie", "langue", "actif")
+    list_filter = ("actif", "categorie", "langue")
     search_fields = ("intitule", "nom_meta")
     change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"

@@ -313,6 +313,12 @@ class TemplateWhatsApp(models.Model):
         "Nom technique du template (Meta)", max_length=100,
         help_text="Doit correspondre EXACTEMENT au nom du template approuvé dans le dashboard Meta.",
     )
+    categorie = models.CharField(
+        "Catégorie Meta", max_length=20, choices=MessageWhatsApp.Categorie.choices,
+        default=MessageWhatsApp.Categorie.MARKETING,
+        help_text="Doit correspondre à la catégorie approuvée sur Meta (Marketing/Utility/Authentication) "
+                   "— utilisée pour un suivi correct de la facturation dans les conversations.",
+    )
     langue = models.CharField("Code langue", max_length=10, default="fr")
     variables = models.JSONField(
         "Variables du corps, dans l'ordre", default=list, blank=True,

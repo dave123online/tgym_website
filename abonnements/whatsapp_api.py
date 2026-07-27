@@ -106,11 +106,20 @@ def envoyer_texte_libre(numero: str, texte: str) -> dict:
     return reponse_json
 
 
-def envoyer_template(numero: str, nom_template: str, langue: str, parametres_body: list[str]) -> dict:
+def envoyer_template(
+    numero: str, nom_template: str, langue: str, parametres_body: list[str],
+    categorie: str | None = None,
+) -> dict:
     """
     Envoi générique d'un template WhatsApp vers un numéro donné, sans lien
     avec un Abonnement — utilisé pour l'envoi de masse (ContactMasse) et
     tout futur cas d'usage (annonces, promos...).
+
+    `categorie` : catégorie Meta réelle du template (Marketing/Utility/
+    Authentication), utilisée pour un suivi correct de la facturation
+    dans MessageWhatsApp. Par défaut Marketing si non précisé (le plus
+    prudent : c'est la catégorie la plus chère, donc jamais un
+    sous-comptage de coût).
 
     `parametres_body` : liste de chaînes, dans l'ordre des variables {{1}},
     {{2}}, etc. définies dans le template Meta. Laisser vide si le
@@ -179,7 +188,7 @@ def envoyer_template(numero: str, nom_template: str, langue: str, parametres_bod
         sens=MessageWhatsApp.Sens.SORTANT,
         wamid=wamid,
         contenu=f"[Template: {nom_template}] " + " / ".join(parametres_body),
-        categorie=MessageWhatsApp.Categorie.MARKETING,
+        categorie=categorie or MessageWhatsApp.Categorie.MARKETING,
         est_facturable=True,
         payload_brut=reponse_json,
     )
