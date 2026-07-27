@@ -119,7 +119,7 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
 
     contenu = _extraire_contenu(msg)
 
-    MessageWhatsApp.objects.update_or_create(
+    _, created = MessageWhatsApp.objects.update_or_create(
         wamid=msg.get("id"),
         defaults={
             "conversation": conversation,
@@ -130,6 +130,17 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
             "payload_brut": msg,
         },
     )
+
+    if not created:
+        # Meta a renvoyé ce même wamid (retry webhook suite à un ACK trop
+        # lent côté serveur). Le message est déjà enregistré : ne PAS
+        # rappeler le bot, sinon on relance Gemini et on renvoie une
+        # réponse en double au client pour un seul message reçu.
+        logger.info(
+            "Webhook WhatsApp dupliqué (wamid=%s déjà traité) — bot non rappelé.",
+            msg.get("id"),
+        )
+        return
 
     from .whatsapp_bot import traiter_message_entrant
     try:
@@ -165,4 +176,3 @@ def _mettre_a_jour_statut(statut: dict) -> None:
     MessageWhatsApp.objects.filter(wamid=wamid).update(
         statut_livraison=statut.get("status", "")
     )
-
