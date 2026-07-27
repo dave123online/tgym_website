@@ -37,7 +37,7 @@ GEMINI_MODEL = "gemini-3.5-flash-lite"
 # traité de façon totalement isolée : le bot ne sait pas de quoi parlait
 # l'échange précédent et régénère une réponse générique sur des relances
 # comme "parle-moi en plus" ou "ah oui ?" (voir audit du 27/07/2026).
-HISTORIQUE_MAX_MESSAGES = 20
+HISTORIQUE_MAX_MESSAGES = 14
 
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
