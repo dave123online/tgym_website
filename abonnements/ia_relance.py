@@ -16,6 +16,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 
 def _prenom(abonnement) -> str:
     return abonnement.user.first_name or abonnement.user.username
@@ -69,19 +72,28 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
 
     try:
         from google import genai
+        from google.genai import errors
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             contents=_prompt(abonnement),
         )
         texte = (response.text or "").strip()
         if not texte:
             raise ValueError("Réponse vide de Gemini")
         return texte, True
+    except errors.APIError as exc:
+        logger.error(
+            "Échec de la génération Gemini pour l'abonnement #%s — code=%s status=%s message=%s "
+            "— message de secours utilisé",
+            abonnement.pk, exc.code, exc.status, exc.message,
+        )
+        return _message_secours(abonnement), False
     except Exception:
         logger.exception(
-            "Échec de la génération Gemini pour l'abonnement #%s — message de secours utilisé",
+            "Échec inattendu (non-API) de la génération Gemini pour l'abonnement #%s — "
+            "message de secours utilisé",
             abonnement.pk,
         )
         return _message_secours(abonnement), False

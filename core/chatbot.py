@@ -16,6 +16,11 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+# gemini-3.5-flash-lite est GA (production-ready) et adapté à un usage léger
+# comme un chatbot de site. À surveiller sur https://ai.google.dev/gemini-api/docs/deprecations
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 # Limite de messages par visiteur par jour (stockée en session), pour une
 # UX de courtoisie ("tu as atteint ta limite"). La vraie mesure anti-abus
 # est le throttle par IP dans core/views.py (_limite_ip_atteinte), qui ne
@@ -97,7 +102,7 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
 
     try:
         from google import genai
-        from google.genai import types
+        from google.genai import errors, types
 
         client = genai.Client(api_key=api_key)
         historique_contenu = [
@@ -105,13 +110,21 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
             for tour in historique
         ]
         chat = client.chats.create(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             history=historique_contenu,
             config=types.GenerateContentConfig(system_instruction=_instructions_systeme()),
         )
         response = chat.send_message(message)
         texte = (response.text or "").strip()
         return texte or MESSAGE_REPLI
+    except errors.APIError as exc:
+        # exc.code = code HTTP renvoyé par l'API Gemini (404 modèle inconnu/retiré,
+        # 429 quota dépassé, 403 clé restreinte/API non activée, 5xx panne Google...).
+        logger.error(
+            "Échec de l'appel Gemini pour le chatbot du site — code=%s status=%s message=%s",
+            exc.code, exc.status, exc.message,
+        )
+        return MESSAGE_REPLI
     except Exception:
-        logger.exception("Échec de l'appel Gemini pour le chatbot du site.")
+        logger.exception("Échec inattendu (non-API) de l'appel Gemini pour le chatbot du site.")
         return MESSAGE_REPLI

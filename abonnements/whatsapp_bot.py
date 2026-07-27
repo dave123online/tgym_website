@@ -24,6 +24,9 @@ from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_texte_libre
 
 logger = logging.getLogger(__name__)
 
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
 )
@@ -112,11 +115,11 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
 
     try:
         from google import genai
-        from google.genai import types
+        from google.genai import errors, types
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             contents=message,
             config=types.GenerateContentConfig(
                 system_instruction=_instructions_systeme(conversation)
@@ -125,9 +128,26 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
         texte = (response.text or "").strip()
         # Gemini peut entourer le JSON de ```json ... ``` malgré la consigne : on nettoie.
         texte = texte.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(texte)
+    except errors.APIError as exc:
+        logger.error(
+            "Échec de l'appel Gemini pour le bot WhatsApp (conversation %s) — code=%s status=%s message=%s",
+            conversation.wa_id, exc.code, exc.status, exc.message,
+        )
+        return None
     except Exception:
-        logger.exception("Échec de l'appel Gemini pour le bot WhatsApp (conversation %s).", conversation.wa_id)
+        logger.exception(
+            "Échec inattendu (non-API) de l'appel Gemini pour le bot WhatsApp (conversation %s).",
+            conversation.wa_id,
+        )
+        return None
+
+    try:
+        return json.loads(texte)
+    except json.JSONDecodeError:
+        logger.error(
+            "Réponse Gemini non-JSON pour le bot WhatsApp (conversation %s) : %r",
+            conversation.wa_id, texte[:300],
+        )
         return None
 
 
