@@ -97,4 +97,3 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
             abonnement.pk,
         )
         return _message_secours(abonnement), False
-

@@ -47,4 +47,3 @@ class Programme(models.Model):
         verbose_name = "Programme"
         verbose_name_plural = "Programmes"
         ordering = ["ordre_affichage", "titre"]
-

@@ -68,4 +68,3 @@ Tout se fait dans `/admin/` :
 ## Déploiement (à venir)
 
 Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'environnement pour `SECRET_KEY`/`DEBUG`/`ALLOWED_HOSTS`, Postgres en prod. Pas encore configuré — on le fera à l'étape déploiement.
-

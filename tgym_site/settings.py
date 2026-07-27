@@ -245,6 +245,11 @@ WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
 WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
 WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")
+# Numéro (format international, ex: 22961234567, sans le +) prévenu
+# automatiquement par le bot WhatsApp (abonnements/whatsapp_bot.py) à chaque
+# escalade vers un humain, avec un lien direct vers la conversation client.
+# Laisser vide pour désactiver la notification (aucun impact sur le bot).
+ADMIN_WHATSAPP_NUMBER = os.environ.get("ADMIN_WHATSAPP_NUMBER", "")
 CRON_SECRET_TOKEN = os.environ.get("CRON_SECRET_TOKEN", "")
 # Nom + langue du template Meta pré-approuvé utilisé pour la relance
 # d'abonnement (à créer et faire approuver côté Meta Business Manager).

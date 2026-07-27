@@ -13,4 +13,3 @@ urlpatterns = [
     path("staff/conversations/<int:pk>/", views_staff.detail_conversation, name="staff_conversation_detail"),
     path("staff/conversations/<int:pk>/mode/", views_staff.changer_mode_conversation, name="staff_conversation_mode"),
 ]
-

@@ -52,4 +52,3 @@ class ProfilAdmin(admin.ModelAdmin):
     list_filter = ("role",)
     list_editable = ("role",)
     search_fields = ("user__username", "user__first_name", "user__last_name", "telephone")
-

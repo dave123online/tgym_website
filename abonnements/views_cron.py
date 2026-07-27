@@ -33,4 +33,3 @@ def declencher_relances(request):
         return JsonResponse({"status": "error"}, status=500)
 
     return JsonResponse({"status": "ok"})
-

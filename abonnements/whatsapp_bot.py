@@ -71,6 +71,38 @@ def _escalader(conversation: ConversationWhatsApp, raison: str) -> None:
             "Échec d'envoi du message d'escalade pour la conversation %s.", conversation.wa_id
         )
 
+    _notifier_admin(conversation, raison)
+
+
+def _notifier_admin(conversation: ConversationWhatsApp, raison: str) -> None:
+    """Prévient un conseiller humain sur WhatsApp qu'une conversation vient
+    d'être escaladée, avec un lien direct (wa.me) vers l'échange avec le
+    client — pour ne pas avoir à chercher le numéro dans l'admin Django.
+
+    N'échoue jamais bruyamment : si ADMIN_WHATSAPP_NUMBER n'est pas
+    configuré, ou si l'envoi échoue, on logue et on continue (le client a
+    déjà reçu son message d'escalade, l'essentiel est fait).
+    """
+    numero_admin = getattr(settings, "ADMIN_WHATSAPP_NUMBER", "")
+    if not numero_admin:
+        logger.info("ADMIN_WHATSAPP_NUMBER absent — notification admin non envoyée.")
+        return
+
+    lien_conversation = f"https://wa.me/{conversation.wa_id.lstrip('+')}"
+    message = (
+        f"🔔 Escalade T-GYM WhatsApp\n"
+        f"Client : {conversation.wa_id}\n"
+        f"Raison : {raison}\n"
+        f"Conversation : {lien_conversation}"
+    )
+
+    try:
+        envoyer_texte_libre(numero_admin, message)
+    except EnvoiWhatsAppIndisponible:
+        logger.exception(
+            "Échec d'envoi de la notification admin pour la conversation %s.", conversation.wa_id
+        )
+
 
 def _contexte_client(conversation: ConversationWhatsApp) -> str:
     """Récupère les infos du client (abonnement, dates) si son numéro
@@ -229,5 +261,3 @@ def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> N
         envoyer_texte_libre(conversation.wa_id, reponse)
     except EnvoiWhatsAppIndisponible:
         logger.exception("Échec d'envoi de la réponse bot pour la conversation %s.", conversation.wa_id)
-        _escalader(conversation, raison="Échec technique d'envoi de la réponse bot")
-

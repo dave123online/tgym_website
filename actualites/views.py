@@ -11,4 +11,3 @@ def actualites(request):
 def actualite_detail(request, slug):
     actualite = get_object_or_404(Actualite, slug=slug, est_publiee=True)
     return render(request, "actualites/actualite_detail.html", {"actualite": actualite})
-

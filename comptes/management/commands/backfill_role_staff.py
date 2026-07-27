@@ -61,4 +61,3 @@ class Command(BaseCommand):
                     f"{corrections} rôle(s) mis à STAFF)."
                 )
             )
-

@@ -291,4 +291,3 @@ def envoyer_template_relance(abonnement) -> dict:
     )
 
     return reponse_json
-
