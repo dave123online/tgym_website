@@ -8,6 +8,7 @@ from django.views.decorators.http import require_POST
 logger = logging.getLogger(__name__)
 
 
+@csrf_exempt
 @require_POST
 def declencher_relances(request):
     """
