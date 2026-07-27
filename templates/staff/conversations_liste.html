@@ -1,0 +1,70 @@
+{% extends "staff/base_staff.html" %}
+
+{% block title %}Conversations WhatsApp{% endblock %}
+
+{% block content %}
+<style>
+    .conv-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+    .conv-header h1 { margin:0; font-size:22px; }
+    .conv-filtres { display:flex; gap:8px; flex-wrap:wrap; }
+    .conv-filtres a {
+        padding:6px 14px; border-radius:999px; font-size:13px; text-decoration:none;
+        border:1px solid var(--border-strong); color:var(--text-muted);
+    }
+    .conv-filtres a.active { background:var(--yellow); color:var(--black); border-color:var(--yellow); font-weight:700; }
+    .conv-liste { display:flex; flex-direction:column; gap:10px; }
+    .conv-card {
+        display:flex; align-items:center; justify-content:space-between; gap:14px;
+        background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius);
+        padding:14px 16px; text-decoration:none; color:var(--text);
+    }
+    .conv-card:hover { border-color:var(--yellow); }
+    .conv-card__infos { display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .conv-card__nom { font-weight:700; }
+    .conv-card__apercu { font-size:13px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+    .conv-card__meta { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+    .badge { font-size:11px; padding:3px 9px; border-radius:999px; font-weight:700; white-space:nowrap; }
+    .badge--humain { background:#fbe4e1; color:var(--danger); }
+    .badge--bot { background:#e1f6e6; color:#1e6b34; }
+    [data-theme="dark"] .badge--humain { background:#341a17; color:#f19b90; }
+    [data-theme="dark"] .badge--bot { background:#16321f; color:#7fd996; }
+    .conv-card__date { font-size:12px; color:var(--text-muted-2); min-width:70px; text-align:right; }
+    .conv-vide { color:var(--text-muted); padding:30px 0; text-align:center; }
+</style>
+
+<div class="conv-header">
+    <h1>💬 Conversations WhatsApp</h1>
+    <div class="conv-filtres">
+        <a href="{% url 'abonnements:staff_conversations' %}" class="{% if not filtre_actif %}active{% endif %}">Toutes</a>
+        <a href="{% url 'abonnements:staff_conversations' %}?filtre=humain" class="{% if filtre_actif == 'humain' %}active{% endif %}">Escaladées ⚠️</a>
+        <a href="{% url 'abonnements:staff_conversations' %}?filtre=bot" class="{% if filtre_actif == 'bot' %}active{% endif %}">Mode bot 🤖</a>
+    </div>
+</div>
+
+<div class="conv-liste">
+    {% for conv in conversations %}
+    <a href="{% url 'abonnements:staff_conversation_detail' conv.pk %}" class="conv-card">
+        <div class="conv-card__infos">
+            <div class="conv-card__nom">{{ conv.nom_contact|default:conv.wa_id }}</div>
+            {% if conv.dernier_message %}
+                <div class="conv-card__apercu">
+                    {% if conv.dernier_message.sens == 'sortant' %}Vous : {% endif %}{{ conv.dernier_message.contenu }}
+                </div>
+            {% else %}
+                <div class="conv-card__apercu">Aucun message pour l'instant.</div>
+            {% endif %}
+        </div>
+        <div class="conv-card__meta">
+            {% if conv.mode_bot == 'humain' %}
+                <span class="badge badge--humain">Humain requis</span>
+            {% else %}
+                <span class="badge badge--bot">Bot</span>
+            {% endif %}
+            <span class="conv-card__date">{{ conv.derniere_activite|date:"d/m H:i" }}</span>
+        </div>
+    </a>
+    {% empty %}
+    <p class="conv-vide">Aucune conversation pour ce filtre.</p>
+    {% endfor %}
+</div>
+{% endblock %}

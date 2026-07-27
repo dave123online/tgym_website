@@ -65,6 +65,7 @@
             <h3>Espace staff</h3>
             <p>Gérez le site depuis l'<a href="/admin/">administration</a>.</p>
             <p><a href="{% url 'comptes:creer_compte_adherent' %}" class="btn btn-primary">+ Créer un compte adhérent</a></p>
+            <p><a href="{% url 'abonnements:staff_conversations' %}" class="btn btn-outline">Voir les conversations</a></p>
         </div>
         {% else %}
         <p>Profil non configuré — contactez le staff.</p>

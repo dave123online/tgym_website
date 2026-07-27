@@ -1,0 +1,170 @@
+{% extends "staff/base_staff.html" %}
+
+{% block title %}{{ conversation.nom_contact|default:conversation.wa_id }} — Conversation{% endblock %}
+
+{% block content %}
+<style>
+    .conv-retour { display:inline-block; margin-bottom:14px; font-size:14px; color:var(--text-muted); text-decoration:none; }
+    .conv-retour:hover { color:var(--yellow-deep); }
+    .conv-titre { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    .conv-titre h1 { margin:0; font-size:20px; }
+    .conv-titre .num { font-size:13px; color:var(--text-muted); font-weight:400; }
+    .conv-fil {
+        border:1px solid var(--border); border-radius:var(--radius); padding:14px;
+        max-height:480px; overflow-y:auto; background:var(--bg-alt);
+        display:flex; flex-direction:column; gap:8px;
+    }
+    .bulle-ligne { display:flex; }
+    .bulle-ligne.sortant { justify-content:flex-end; }
+    .bulle-ligne.entrant { justify-content:flex-start; }
+    .bulle {
+        max-width:75%; padding:8px 12px; border-radius:10px;
+        box-shadow:0 1px 1px rgba(0,0,0,.08); font-size:14px;
+    }
+    .bulle.sortant { background:#dcf8c6; color:#111; }
+    .bulle.entrant { background:var(--card-bg); color:var(--text); border:1px solid var(--border); }
+    .bulle__meta { font-size:11px; color:#667781; margin-top:4px; text-align:right; }
+    .conv-vide-fil { color:var(--text-muted); text-align:center; padding:20px 0; }
+
+    .conv-fenetre { margin:14px 0; font-size:14px; }
+    .conv-fenetre.ouverte { color:#1e6b34; }
+    .conv-fenetre.fermee { color:var(--danger); }
+
+    .conv-reponse textarea {
+        width:100%; box-sizing:border-box; border-radius:var(--radius); border:1px solid var(--border-strong);
+        padding:10px; font-family:inherit; font-size:14px; background:var(--card-bg); color:var(--text);
+        resize:vertical;
+    }
+    .conv-reponse-actions { display:flex; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; gap:8px; }
+    .conv-reponse-actions label { font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+    .btn-envoyer {
+        background:var(--yellow); color:var(--black); border:none; padding:9px 20px;
+        border-radius:999px; font-weight:700; cursor:pointer; font-size:14px;
+    }
+    .btn-envoyer:disabled { background:var(--border-strong); color:var(--text-muted-2); cursor:not-allowed; }
+    #reponse-statut { font-size:12px; }
+
+    .conv-mode-form { margin-top:20px; padding-top:16px; border-top:1px solid var(--border); }
+    .conv-mode-form select { padding:6px 10px; border-radius:6px; border:1px solid var(--border-strong); background:var(--card-bg); color:var(--text); }
+    .conv-mode-form button { margin-left:8px; padding:6px 14px; border-radius:6px; border:1px solid var(--border-strong); background:var(--card-bg); color:var(--text); cursor:pointer; }
+</style>
+
+<a href="{% url 'abonnements:staff_conversations' %}" class="conv-retour">&larr; Toutes les conversations</a>
+
+<div class="conv-titre">
+    <h1>{{ conversation.nom_contact|default:conversation.wa_id }} <span class="num">({{ conversation.wa_id }})</span></h1>
+</div>
+
+<div class="conv-fil" id="conv-fil">
+    {% for msg in fil_messages %}
+    <div class="bulle-ligne {{ msg.sens }}">
+        <div class="bulle {{ msg.sens }}">
+            <div>{{ msg.contenu }}</div>
+            <div class="bulle__meta">
+                {{ msg.date_envoi|date:"d/m H:i" }}
+                {% if msg.sens == 'sortant' %}
+                    · {{ msg.get_categorie_display }}
+                    {% if msg.statut_livraison %} · {{ msg.statut_livraison }}{% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <p class="conv-vide-fil">Aucun message pour l'instant.</p>
+    {% endfor %}
+</div>
+
+{% if fenetre_ouverte %}
+    <p class="conv-fenetre ouverte">✅ Fenêtre de service ouverte — réponse libre gratuite possible.</p>
+{% else %}
+    <p class="conv-fenetre fermee">⚠️ Fenêtre de service fermée (le client n'a pas écrit depuis plus de 24h). L'envoi d'un message texte libre échouera — utilise plutôt la diffusion par template.</p>
+{% endif %}
+
+<div class="conv-reponse">
+    <textarea id="reponse-texte" rows="3" placeholder="Écrire une réponse..."></textarea>
+    <div class="conv-reponse-actions">
+        <label>
+            <input type="checkbox" id="reponse-garder-mode-humain" value="1">
+            Garder cette conversation en mode humain après l'envoi (ne pas repasser en bot)
+        </label>
+        <div>
+            <span id="reponse-statut"></span>
+            <button type="button" class="btn-envoyer" id="reponse-envoyer-btn" {% if not fenetre_ouverte %}disabled{% endif %}>Envoyer</button>
+        </div>
+    </div>
+</div>
+
+<div class="conv-mode-form">
+    <form method="post" action="{% url 'abonnements:staff_conversation_mode' conversation.pk %}">
+        {% csrf_token %}
+        <label for="mode_bot">Mode de réponse :</label>
+        <select name="mode_bot" id="mode_bot">
+            {% for valeur, libelle in modes_bot %}
+                <option value="{{ valeur }}" {% if valeur == conversation.mode_bot %}selected{% endif %}>{{ libelle }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Mettre à jour</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+    function getCookie(name) {
+        const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return match ? decodeURIComponent(match.pop()) : '';
+    }
+
+    const btn = document.getElementById('reponse-envoyer-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function () {
+        const textarea = document.getElementById('reponse-texte');
+        const checkbox = document.getElementById('reponse-garder-mode-humain');
+        const statut = document.getElementById('reponse-statut');
+        const texte = textarea.value.trim();
+
+        if (!texte) {
+            statut.textContent = 'Le message est vide.';
+            statut.style.color = '#c0392b';
+            return;
+        }
+
+        btn.disabled = true;
+        statut.textContent = 'Envoi en cours...';
+        statut.style.color = '#777';
+
+        const body = new URLSearchParams();
+        body.set('texte', texte);
+        if (checkbox.checked) {
+            body.set('garder_mode_humain', '1');
+        }
+
+        fetch("{% url 'abonnements:repondre_conversation' conversation.pk %}?next=staff", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCookie('csrftoken'),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: body.toString(),
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Erreur HTTP ' + response.status);
+                }
+                window.location.reload();
+            })
+            .catch(function (err) {
+                statut.textContent = "Échec de l'envoi : " + err.message;
+                statut.style.color = '#c0392b';
+                btn.disabled = false;
+            });
+    });
+
+    const fil = document.getElementById('conv-fil');
+    if (fil) { fil.scrollTop = fil.scrollHeight; }
+})();
+</script>
+{% endblock %}

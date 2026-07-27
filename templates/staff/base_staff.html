@@ -1,0 +1,81 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Espace staff — Conversations{% endblock %} — {{ site_config.nom }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+    <style>
+        body.staff-body {
+            background: var(--bg-alt);
+            color: var(--text);
+            font-family: "Inter", sans-serif;
+            margin: 0;
+        }
+        .staff-header {
+            background: var(--black);
+            color: var(--white);
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .staff-header a { color: var(--white); text-decoration: none; }
+        .staff-header__brand { font-weight: 800; letter-spacing: .02em; }
+        .staff-header__brand span { color: var(--yellow); }
+        .staff-header__nav a {
+            margin-left: 16px;
+            font-size: 14px;
+            color: var(--grey);
+        }
+        .staff-header__nav a:hover, .staff-header__nav a.active { color: var(--yellow); }
+        .staff-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 16px 60px;
+        }
+        .staff-messages { list-style: none; padding: 0; margin: 0 0 16px; }
+        .staff-messages li {
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .staff-messages li.success { background: #e1f6e6; color: #1e6b34; }
+        .staff-messages li.error { background: #fbe4e1; color: var(--danger); }
+        [data-theme="dark"] .staff-messages li.success { background: #16321f; color: #7fd996; }
+        [data-theme="dark"] .staff-messages li.error { background: #341a17; color: #f19b90; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="staff-body">
+    <div class="staff-header">
+        <div>
+            <a href="{% url 'abonnements:staff_conversations' %}" class="staff-header__brand">T-GYM <span>Staff</span></a>
+        </div>
+        <nav class="staff-header__nav">
+            <a href="{% url 'abonnements:staff_conversations' %}">Conversations</a>
+            <a href="{% url 'core:accueil' %}">Retour au site</a>
+            <a href="{% url 'comptes:deconnexion' %}">Déconnexion</a>
+        </nav>
+    </div>
+
+    <div class="staff-container">
+        {% if messages %}
+        <ul class="staff-messages">
+            {% for message in messages %}
+                <li class="{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    {% block extra_body %}{% endblock %}
+</body>
+</html>
