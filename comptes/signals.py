@@ -30,3 +30,4 @@ def creer_profil(sender, instance, created, **kwargs):
         if profil.role != Profil.Role.STAFF:
             profil.role = Profil.Role.STAFF
             profil.save(update_fields=["role"])
+

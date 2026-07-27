@@ -16,3 +16,4 @@ class ActualiteAdmin(admin.ModelAdmin):
         ("Contenu", {"fields": ("corps", "image")}),
         ("Publication", {"fields": ("is_featured", "est_publiee", "date_publication")}),
     )
+

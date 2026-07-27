@@ -52,3 +52,4 @@ class Actualite(models.Model):
         verbose_name = "Actualité"
         verbose_name_plural = "Actualités"
         ordering = ["-date_publication"]
+

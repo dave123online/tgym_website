@@ -894,3 +894,4 @@ input:focus, textarea:focus, select:focus {
   .temoignages-carrousel { grid-template-columns: 1fr; }
   .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
 }
+

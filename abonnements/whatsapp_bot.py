@@ -10,6 +10,11 @@ Ne répond JAMAIS avec du texte libre en dehors d'un message entrant
 récent (la fenêtre de service 24h est nécessairement ouverte puisqu'on
 est appelé depuis le webhook, en réaction à un message du client).
 
+Chaque appel à Gemini reçoit l'historique récent de la conversation
+(HISTORIQUE_MAX_MESSAGES messages, voir `_historique_conversation`), pas
+seulement le dernier message entrant — sinon le bot ne peut pas gérer une
+relance du type "parle-moi en plus" ou "ah oui ?" sans contexte.
+
 Ne lève jamais d'exception vers l'appelant (le webhook) : toute erreur
 est loguée et, par prudence, déclenche une escalade humaine plutôt que
 de laisser le client sans réponse.
@@ -19,13 +24,20 @@ import logging
 
 from django.conf import settings
 
-from .models import ConversationWhatsApp
+from .models import ConversationWhatsApp, MessageWhatsApp
 from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_texte_libre
 
 logger = logging.getLogger(__name__)
 
 # gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
 GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+# Nombre de messages (entrants + sortants confondus) conservés dans
+# l'historique envoyé à Gemini à chaque tour. Sans ça, chaque message est
+# traité de façon totalement isolée : le bot ne sait pas de quoi parlait
+# l'échange précédent et régénère une réponse générique sur des relances
+# comme "parle-moi en plus" ou "ah oui ?" (voir audit du 27/07/2026).
+HISTORIQUE_MAX_MESSAGES = 20
 
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
@@ -107,6 +119,42 @@ def _instructions_systeme(conversation: ConversationWhatsApp) -> str:
     )
 
 
+def _historique_conversation(conversation: ConversationWhatsApp, types_module) -> list:
+    """Reconstruit les derniers échanges (jusqu'à HISTORIQUE_MAX_MESSAGES,
+    entrants + sortants) sous forme de tours Gemini (`types.Content`), pour
+    que le bot ait le fil de la conversation plutôt que de traiter chaque
+    message entrant comme une question isolée.
+
+    Le message qui vient d'arriver a déjà été enregistré en base par le
+    webhook AVANT l'appel à cette fonction (voir `_enregistrer_message_entrant`
+    dans `views.py`) : il fait donc partie de `conversation.messages` et doit
+    être exclu ici, puisqu'il est envoyé séparément comme message courant à
+    `chat.send_message()`.
+
+    Les réponses du bot sont stockées en texte brut (le champ `reponse` déjà
+    extrait du JSON, voir `envoyer_texte_libre`), pas en JSON — c'est
+    volontaire : le JSON strict n'est une contrainte de format que sur la
+    sortie du tour courant, pas quelque chose que Gemini a besoin de revoir
+    dans son propre historique.
+    """
+    messages = list(
+        conversation.messages.order_by("-date_envoi")[: HISTORIQUE_MAX_MESSAGES + 1]
+    )
+    messages.reverse()
+    if messages:
+        messages = messages[:-1]  # retire le message entrant courant (déjà enregistré)
+
+    historique = []
+    for msg in messages:
+        if not msg.contenu:
+            continue
+        role = "user" if msg.sens == MessageWhatsApp.Sens.ENTRANT else "model"
+        historique.append(
+            types_module.Content(role=role, parts=[types_module.Part.from_text(text=msg.contenu)])
+        )
+    return historique
+
+
 def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict | None:
     api_key = getattr(settings, "GEMINI_API_KEY", "")
     if not api_key:
@@ -118,13 +166,14 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
         from google.genai import errors, types
 
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
+        chat = client.chats.create(
             model=GEMINI_MODEL,
-            contents=message,
+            history=_historique_conversation(conversation, types),
             config=types.GenerateContentConfig(
                 system_instruction=_instructions_systeme(conversation)
             ),
         )
+        response = chat.send_message(message)
         texte = (response.text or "").strip()
         # Gemini peut entourer le JSON de ```json ... ``` malgré la consigne : on nettoie.
         texte = texte.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -181,3 +230,4 @@ def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> N
     except EnvoiWhatsAppIndisponible:
         logger.exception("Échec d'envoi de la réponse bot pour la conversation %s.", conversation.wa_id)
         _escalader(conversation, raison="Échec technique d'envoi de la réponse bot")
+

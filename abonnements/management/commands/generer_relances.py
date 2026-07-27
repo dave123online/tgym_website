@@ -59,3 +59,4 @@ class Command(BaseCommand):
             f"{crees} message(s) de relance créé(s), {ignores} déjà existant(s) ignoré(s) "
             f"(fenêtre : abonnements expirant d'ici {jours} jour(s))."
         ))
+

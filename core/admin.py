@@ -48,3 +48,4 @@ class VideoSalleAdmin(admin.ModelAdmin):
     list_display = ("__str__", "type_video", "programme", "actif", "ordre_affichage", "date_ajout")
     list_editable = ("actif", "ordre_affichage")
     list_filter = ("type_video", "actif", "programme")
+

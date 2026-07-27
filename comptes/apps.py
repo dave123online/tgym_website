@@ -8,3 +8,4 @@ class ComptesConfig(AppConfig):
 
     def ready(self):
         import comptes.signals  # noqa
+

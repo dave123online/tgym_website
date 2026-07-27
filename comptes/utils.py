@@ -21,3 +21,4 @@ def normaliser_telephone(valeur: str) -> str:
         if valeur.startswith(prefixe):
             return valeur[len(prefixe):]
     return valeur
+

@@ -29,3 +29,4 @@ def site_config(request):
         "programme_phare": programme_phare,
         "actualite_phare": actualite_phare,
     }
+

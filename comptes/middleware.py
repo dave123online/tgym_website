@@ -85,3 +85,4 @@ class AntiBruteForceMiddleware:
                 cache.set(cle, nombre + 1, timeout=FENETRE_SECONDES)
 
         return response
+

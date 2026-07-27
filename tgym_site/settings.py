@@ -269,3 +269,4 @@ if IS_PRODUCTION:
     # provoquerait une boucle de redirection.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
+

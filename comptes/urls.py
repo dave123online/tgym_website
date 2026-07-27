@@ -12,3 +12,4 @@ urlpatterns = [
     path("mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="changer_mot_de_passe"),
     path("mot-de-passe/termine/", views.ChangerMotDePasseTermineView.as_view(), name="changer_mot_de_passe_termine"),
 ]
+

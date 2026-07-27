@@ -331,3 +331,4 @@ Les interfaces Meta changent souvent. Si un bouton a changé de place :
 ---
 
 Une fois tout ça fait, T-GYM pourra envoyer des relances automatiques à tous les adhérents dont l'abonnement expire. Tu veux qu'on passe à la suite (chatbot Gemini sur le site, ou déploiement Render) ?
+

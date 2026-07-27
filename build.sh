@@ -16,3 +16,4 @@ python manage.py seed_tgym
 if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
   python manage.py createsuperuser --noinput || true
 fi
+

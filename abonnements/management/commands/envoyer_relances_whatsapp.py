@@ -46,3 +46,4 @@ class Command(BaseCommand):
             f"{envoyes} message(s) envoyé(s) automatiquement, "
             f"{laisses_en_attente} laissé(s) pour envoi manuel."
         ))
+

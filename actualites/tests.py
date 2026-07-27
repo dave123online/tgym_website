@@ -48,3 +48,4 @@ class ActualitesViewsTests(TestCase):
     def test_detail_actualite_inexistante_404(self):
         resp = self.client.get(reverse("actualites:actualite_detail", args=["inexistant"]))
         self.assertEqual(resp.status_code, 404)
+
