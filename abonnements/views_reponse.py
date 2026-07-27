@@ -30,6 +30,8 @@ def repondre_conversation(request, pk):
             except EnvoiWhatsAppIndisponible as exc:
                 messages.error(request, f"Échec d'envoi : {exc}")
 
+    if request.GET.get("next") == "staff" or request.POST.get("next") == "staff":
+        return redirect("abonnements:staff_conversation_detail", conversation.pk)
     return redirect("admin:abonnements_conversationwhatsapp_change", conversation.pk)
 
 
