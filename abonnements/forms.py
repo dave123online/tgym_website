@@ -18,3 +18,4 @@ class EnvoiMasseForm(forms.Form):
     def parametres_liste(self) -> list[str]:
         brut = self.cleaned_data.get("parametres", "")
         return [p.strip() for p in brut.split(",") if p.strip()]
+

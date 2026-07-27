@@ -70,7 +70,6 @@ Tout se fait dans `/admin/` :
 
 Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'environnement pour `SECRET_KEY`/`DEBUG`/`ALLOWED_HOSTS`, Postgres en prod. Pas encore configuré — on le fera à l'étape déploiement.
 
-
 === ./WA_ID_PROCESS.md ===
 # Guide complet — Obtenir les identifiants WhatsApp Business API (Meta)
 
@@ -406,9 +405,7 @@ Les interfaces Meta changent souvent. Si un bouton a changé de place :
 
 Une fois tout ça fait, T-GYM pourra envoyer des relances automatiques à tous les adhérents dont l'abonnement expire. Tu veux qu'on passe à la suite (chatbot Gemini sur le site, ou déploiement Render) ?
 
-
 === ./abonnements/__init__.py ===
-
 
 
 === ./abonnements/admin.py ===
@@ -590,14 +587,12 @@ class TemplateWhatsAppAdmin(admin.ModelAdmin):
     search_fields = ("intitule", "nom_meta")
     change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"
 
-
 === ./abonnements/apps.py ===
 from django.apps import AppConfig
 
 
 class AbonnementsConfig(AppConfig):
     name = 'abonnements'
-
 
 === ./abonnements/fixtures/templates_whatsapp.json ===
 [
@@ -649,7 +644,6 @@ class AbonnementsConfig(AppConfig):
   }
 ]
 
-
 === ./abonnements/forms.py ===
 from django import forms
 
@@ -672,7 +666,6 @@ class EnvoiMasseForm(forms.Form):
         brut = self.cleaned_data.get("parametres", "")
         return [p.strip() for p in brut.split(",") if p.strip()]
 
-
 === ./abonnements/ia_relance.py ===
 """
 Génération du message de relance personnalisé, via Gemini.
@@ -691,6 +684,9 @@ import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 def _prenom(abonnement) -> str:
@@ -745,30 +741,36 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
 
     try:
         from google import genai
+        from google.genai import errors
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             contents=_prompt(abonnement),
         )
         texte = (response.text or "").strip()
         if not texte:
             raise ValueError("Réponse vide de Gemini")
         return texte, True
+    except errors.APIError as exc:
+        logger.error(
+            "Échec de la génération Gemini pour l'abonnement #%s — code=%s status=%s message=%s "
+            "— message de secours utilisé",
+            abonnement.pk, exc.code, exc.status, exc.message,
+        )
+        return _message_secours(abonnement), False
     except Exception:
         logger.exception(
-            "Échec de la génération Gemini pour l'abonnement #%s — message de secours utilisé",
+            "Échec inattendu (non-API) de la génération Gemini pour l'abonnement #%s — "
+            "message de secours utilisé",
             abonnement.pk,
         )
         return _message_secours(abonnement), False
 
-
 === ./abonnements/management/__init__.py ===
 
 
-
 === ./abonnements/management/commands/__init__.py ===
-
 
 
 === ./abonnements/management/commands/envoyer_relances_whatsapp.py ===
@@ -820,7 +822,6 @@ class Command(BaseCommand):
             f"{envoyes} message(s) envoyé(s) automatiquement, "
             f"{laisses_en_attente} laissé(s) pour envoi manuel."
         ))
-
 
 === ./abonnements/management/commands/generer_relances.py ===
 from datetime import date, timedelta
@@ -884,7 +885,6 @@ class Command(BaseCommand):
             f"{crees} message(s) de relance créé(s), {ignores} déjà existant(s) ignoré(s) "
             f"(fenêtre : abonnements expirant d'ici {jours} jour(s))."
         ))
-
 
 === ./abonnements/models.py ===
 from datetime import date, timedelta
@@ -1225,8 +1225,6 @@ class TemplateWhatsApp(models.Model):
         verbose_name_plural = "Templates WhatsApp"
         ordering = ["intitule"]
 
-
-
 === ./abonnements/templates/admin/abonnements/conversation_change_form.html ===
 {% extends "admin/change_form.html" %}
 
@@ -1349,7 +1347,6 @@ class TemplateWhatsApp(models.Model):
   </script>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/diffusion_etape1.html ===
 {% extends "admin/base_site.html" %}
 {% block content %}
@@ -1390,7 +1387,6 @@ class TemplateWhatsApp(models.Model):
   <p><input type="submit" value="Continuer"></p>
 </form>
 {% endblock %}
-
 
 === ./abonnements/templates/admin/abonnements/diffusion_etape2.html ===
 {% extends "admin/base_site.html" %}
@@ -1438,7 +1434,6 @@ class TemplateWhatsApp(models.Model):
 </form>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/envoi_masse.html ===
 {% extends "admin/base_site.html" %}
 {% block content %}
@@ -1463,14 +1458,12 @@ class TemplateWhatsApp(models.Model):
 </form>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/templatewhatsapp_changelist.html ===
 {% extends "admin/change_list.html" %}
 {% block object-tools-items %}
   <li><a href="{% url 'abonnements:diffusion_whatsapp' %}" class="button">📢 Diffuser un message</a></li>
   {{ block.super }}
 {% endblock %}
-
 
 === ./abonnements/tests.py ===
 from datetime import date, timedelta
@@ -1695,7 +1688,6 @@ class EnvoyerRelancesWhatsappCommandTests(TestCase):
         self.assertTrue(self.relance.envoye_automatiquement)
         self.assertIsNotNone(self.relance.envoye_le)
 
-
 === ./abonnements/urls.py ===
 from django.urls import path
 
@@ -1712,7 +1704,6 @@ urlpatterns = [
     path("staff/conversations/<int:pk>/", views_staff.detail_conversation, name="staff_conversation_detail"),
     path("staff/conversations/<int:pk>/mode/", views_staff.changer_mode_conversation, name="staff_conversation_mode"),
 ]
-
 
 === ./abonnements/views.py ===
 import hashlib
@@ -1883,7 +1874,6 @@ def _mettre_a_jour_statut(statut: dict) -> None:
         statut_livraison=statut.get("status", "")
     )
 
-
 === ./abonnements/views_cron.py ===
 import logging
 
@@ -1920,7 +1910,6 @@ def declencher_relances(request):
         return JsonResponse({"status": "error"}, status=500)
 
     return JsonResponse({"status": "ok"})
-
 
 === ./abonnements/views_diffusion.py ===
 from django.contrib.admin.views.decorators import staff_member_required
@@ -2045,7 +2034,6 @@ def diffusion_whatsapp(request):
         "clients": User.objects.filter(profil__telephone__gt="").select_related("profil"),
     })
 
-
 === ./abonnements/views_reponse.py ===
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
@@ -2094,7 +2082,6 @@ def fenetre_service_ouverte(conversation: ConversationWhatsApp) -> bool:
         return False
     ecart = timezone.now() - dernier_message_entrant.date_envoi
     return ecart.total_seconds() < FENETRE_SERVICE_HEURES * 3600
-
 
 === ./abonnements/views_staff.py ===
 """
@@ -2462,7 +2449,6 @@ def envoyer_template_relance(abonnement) -> dict:
 
     return reponse_json
 
-
 === ./abonnements/whatsapp_bot.py ===
 """
 Bot Gemini pour les messages WhatsApp entrants.
@@ -2489,6 +2475,9 @@ from .models import ConversationWhatsApp
 from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_texte_libre
 
 logger = logging.getLogger(__name__)
+
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
@@ -2578,11 +2567,11 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
 
     try:
         from google import genai
-        from google.genai import types
+        from google.genai import errors, types
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             contents=message,
             config=types.GenerateContentConfig(
                 system_instruction=_instructions_systeme(conversation)
@@ -2591,9 +2580,26 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
         texte = (response.text or "").strip()
         # Gemini peut entourer le JSON de ```json ... ``` malgré la consigne : on nettoie.
         texte = texte.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(texte)
+    except errors.APIError as exc:
+        logger.error(
+            "Échec de l'appel Gemini pour le bot WhatsApp (conversation %s) — code=%s status=%s message=%s",
+            conversation.wa_id, exc.code, exc.status, exc.message,
+        )
+        return None
     except Exception:
-        logger.exception("Échec de l'appel Gemini pour le bot WhatsApp (conversation %s).", conversation.wa_id)
+        logger.exception(
+            "Échec inattendu (non-API) de l'appel Gemini pour le bot WhatsApp (conversation %s).",
+            conversation.wa_id,
+        )
+        return None
+
+    try:
+        return json.loads(texte)
+    except json.JSONDecodeError:
+        logger.error(
+            "Réponse Gemini non-JSON pour le bot WhatsApp (conversation %s) : %r",
+            conversation.wa_id, texte[:300],
+        )
         return None
 
 
@@ -2628,9 +2634,7 @@ def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> N
         logger.exception("Échec d'envoi de la réponse bot pour la conversation %s.", conversation.wa_id)
         _escalader(conversation, raison="Échec technique d'envoi de la réponse bot")
 
-
 === ./actualites/__init__.py ===
-
 
 
 === ./actualites/admin.py ===
@@ -2653,14 +2657,12 @@ class ActualiteAdmin(admin.ModelAdmin):
         ("Publication", {"fields": ("is_featured", "est_publiee", "date_publication")}),
     )
 
-
 === ./actualites/apps.py ===
 from django.apps import AppConfig
 
 
 class ActualitesConfig(AppConfig):
     name = 'actualites'
-
 
 === ./actualites/models.py ===
 from django.db import models
@@ -2718,7 +2720,6 @@ class Actualite(models.Model):
         verbose_name_plural = "Actualités"
         ordering = ["-date_publication"]
 
-
 === ./actualites/templates/actualites/actualite_detail.html ===
 {% extends "base.html" %}
 
@@ -2746,7 +2747,6 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./actualites/templates/actualites/actualites.html ===
 {% extends "base.html" %}
@@ -2781,7 +2781,6 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./actualites/tests.py ===
 from django.test import TestCase
@@ -2835,7 +2834,6 @@ class ActualitesViewsTests(TestCase):
         resp = self.client.get(reverse("actualites:actualite_detail", args=["inexistant"]))
         self.assertEqual(resp.status_code, 404)
 
-
 === ./actualites/urls.py ===
 from django.urls import path
 
@@ -2847,7 +2845,6 @@ urlpatterns = [
     path("actualites/", views.actualites, name="actualites"),
     path("actualites/<slug:slug>/", views.actualite_detail, name="actualite_detail"),
 ]
-
 
 === ./actualites/views.py ===
 from django.shortcuts import get_object_or_404, render
@@ -2863,7 +2860,6 @@ def actualites(request):
 def actualite_detail(request, slug):
     actualite = get_object_or_404(Actualite, slug=slug, est_publiee=True)
     return render(request, "actualites/actualite_detail.html", {"actualite": actualite})
-
 
 === ./build.sh ===
 #!/usr/bin/env bash
@@ -2885,9 +2881,7 @@ if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
   python manage.py createsuperuser --noinput || true
 fi
 
-
 === ./coaching/__init__.py ===
-
 
 
 === ./coaching/admin.py ===
@@ -2910,14 +2904,12 @@ class ProgrammeAdmin(admin.ModelAdmin):
         ("Affichage", {"fields": ("est_phare", "actif", "ordre_affichage")}),
     )
 
-
 === ./coaching/apps.py ===
 from django.apps import AppConfig
 
 
 class CoachingConfig(AppConfig):
     name = 'coaching'
-
 
 === ./coaching/models.py ===
 from django.db import models
@@ -2969,7 +2961,6 @@ class Programme(models.Model):
         verbose_name = "Programme"
         verbose_name_plural = "Programmes"
         ordering = ["ordre_affichage", "titre"]
-
 
 === ./coaching/templates/coaching/programme_detail.html ===
 {% extends "base.html" %}
@@ -3030,7 +3021,6 @@ class Programme(models.Model):
 
 {% endblock %}
 
-
 === ./coaching/templates/coaching/programmes.html ===
 {% extends "base.html" %}
 
@@ -3063,7 +3053,6 @@ class Programme(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./coaching/tests.py ===
 from django.test import TestCase
@@ -3135,7 +3124,6 @@ class ProgrammesViewsTests(TestCase):
         )
         self.assertContains(resp, "wa.me")
 
-
 === ./coaching/urls.py ===
 from django.urls import path
 
@@ -3147,7 +3135,6 @@ urlpatterns = [
     path("programmes/", views.programmes, name="programmes"),
     path("programmes/<slug:slug>/", views.programme_detail, name="programme_detail"),
 ]
-
 
 === ./coaching/views.py ===
 from django.shortcuts import get_object_or_404, render
@@ -3171,9 +3158,7 @@ def programme_detail(request, slug):
         "contact_link": contact_link,
     })
 
-
 === ./comptes/__init__.py ===
-
 
 
 === ./comptes/admin.py ===
@@ -3232,7 +3217,6 @@ class ProfilAdmin(admin.ModelAdmin):
     list_editable = ("role",)
     search_fields = ("user__username", "user__first_name", "user__last_name", "telephone")
 
-
 === ./comptes/apps.py ===
 from django.apps import AppConfig
 
@@ -3244,7 +3228,6 @@ class ComptesConfig(AppConfig):
 
     def ready(self):
         import comptes.signals  # noqa
-
 
 === ./comptes/backends.py ===
 from django.contrib.auth.backends import ModelBackend
@@ -3305,7 +3288,6 @@ class IdentifiantOuTelephoneBackend(ModelBackend):
                 return profil
         return None
 
-
 === ./comptes/decorators.py ===
 """
 Décorateurs de contrôle d'accès par rôle.
@@ -3335,7 +3317,6 @@ def role_required(*roles):
             return vue(request, *args, **kwargs)
         return wrapper
     return decorateur
-
 
 === ./comptes/forms.py ===
 import secrets
@@ -3408,14 +3389,76 @@ class CreationCompteAdherentForm(forms.Form):
     def clean_telephone(self):
         return normaliser_telephone(self.cleaned_data["telephone"])
 
-
 === ./comptes/management/__init__.py ===
-
 
 
 === ./comptes/management/commands/__init__.py ===
 
 
+=== ./comptes/management/commands/backfill_role_staff.py ===
+from django.contrib.auth.models import User
+from django.core.management.base import BaseCommand
+
+from comptes.models import Profil
+
+
+class Command(BaseCommand):
+    help = (
+        "Corrige rétroactivement les comptes is_staff/is_superuser=True dont le "
+        "Profil.role n'est pas (ou plus) STAFF. Utile pour les comptes créés "
+        "avant la sécurisation du signal, ou promus is_staff après coup."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="N'affiche que les comptes concernés, ne modifie rien.",
+        )
+
+    def handle(self, *args, **options):
+        dry_run = options["dry_run"]
+        qs = User.objects.filter(is_staff=True) | User.objects.filter(is_superuser=True)
+        qs = qs.distinct()
+
+        corrections = 0
+        creations = 0
+
+        for user in qs:
+            profil = getattr(user, "profil", None)
+            if profil is None:
+                creations += 1
+                self.stdout.write(f"[Profil manquant] {user.username} -> STAFF")
+                if not dry_run:
+                    Profil.objects.create(user=user, role=Profil.Role.STAFF)
+                continue
+
+            if profil.role != Profil.Role.STAFF:
+                corrections += 1
+                self.stdout.write(
+                    f"[Rôle incorrect] {user.username}: {profil.role} -> STAFF"
+                )
+                if not dry_run:
+                    profil.role = Profil.Role.STAFF
+                    profil.save(update_fields=["role"])
+
+        total = corrections + creations
+        if total == 0:
+            self.stdout.write(self.style.SUCCESS("Aucun compte admin à corriger."))
+        elif dry_run:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{total} compte(s) à corriger ({creations} profil(s) à créer, "
+                    f"{corrections} rôle(s) à changer). Relancer sans --dry-run pour appliquer."
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{total} compte(s) corrigé(s) ({creations} profil(s) créé(s), "
+                    f"{corrections} rôle(s) mis à STAFF)."
+                )
+            )
 
 === ./comptes/middleware.py ===
 """
@@ -3506,7 +3549,6 @@ class AntiBruteForceMiddleware:
 
         return response
 
-
 === ./comptes/models.py ===
 from django.contrib.auth.models import User
 from django.db import models
@@ -3556,7 +3598,6 @@ class Profil(models.Model):
         verbose_name_plural = "Profils"
         ordering = ["user__username"]
 
-
 === ./comptes/signals.py ===
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -3570,14 +3611,26 @@ def creer_profil(sender, instance, created, **kwargs):
     """
     Crée automatiquement un Profil à la création d'un User (ex: via
     `createsuperuser` ou l'admin). Un superuser/staff Django récupère le
-    rôle STAFF par défaut, sinon ADHERENT — le staff pourra changer le rôle
-    ensuite depuis l'admin (ex: passer un compte en COACH).
-    """
-    if not created:
-        return
-    role = Profil.Role.STAFF if (instance.is_staff or instance.is_superuser) else Profil.Role.ADHERENT
-    Profil.objects.get_or_create(user=instance, defaults={"role": role})
+    rôle STAFF par défaut, sinon ADHERENT.
 
+    Si le User existe déjà et qu'on lui donne is_staff/is_superuser après
+    coup (ex: promotion d'un compte via l'admin), on remonte aussi son
+    Profil.role vers STAFF si ce n'est pas déjà le cas — sans jamais
+    rétrograder un COACH/STAFF existant si is_staff repasse à False (le
+    staff garde la main pour changer le rôle manuellement dans ce sens-là).
+    """
+    if created:
+        role = Profil.Role.STAFF if (instance.is_staff or instance.is_superuser) else Profil.Role.ADHERENT
+        Profil.objects.get_or_create(user=instance, defaults={"role": role})
+        return
+
+    if instance.is_staff or instance.is_superuser:
+        profil, _ = Profil.objects.get_or_create(
+            user=instance, defaults={"role": Profil.Role.STAFF}
+        )
+        if profil.role != Profil.Role.STAFF:
+            profil.role = Profil.Role.STAFF
+            profil.save(update_fields=["role"])
 
 === ./comptes/templates/comptes/changer_mot_de_passe.html ===
 {% extends "base.html" %}
@@ -3615,7 +3668,6 @@ def creer_profil(sender, instance, created, **kwargs):
 
 {% endblock %}
 
-
 === ./comptes/templates/comptes/changer_mot_de_passe_termine.html ===
 {% extends "base.html" %}
 
@@ -3630,7 +3682,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/connexion.html ===
 {% extends "base.html" %}
@@ -3661,7 +3712,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/creer_compte.html ===
 {% extends "base.html" %}
@@ -3719,7 +3769,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/mon_espace.html ===
 {% extends "base.html" %}
@@ -3789,6 +3838,7 @@ def creer_profil(sender, instance, created, **kwargs):
             <h3>Espace staff</h3>
             <p>Gérez le site depuis l'<a href="/admin/">administration</a>.</p>
             <p><a href="{% url 'comptes:creer_compte_adherent' %}" class="btn btn-primary">+ Créer un compte adhérent</a></p>
+            <p><a href="{% url 'abonnements:staff_conversations' %}" class="btn btn-outline">Voir les conversations</a></p>
         </div>
         {% else %}
         <p>Profil non configuré — contactez le staff.</p>
@@ -3805,7 +3855,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/tests.py ===
 from django.contrib.auth.models import User
@@ -4107,7 +4156,6 @@ class AntiBruteForceMiddlewareTests(TestCase):
         resp = self._echec()
         self.assertEqual(resp.status_code, 429)
 
-
 === ./comptes/urls.py ===
 from django.urls import path
 
@@ -4123,7 +4171,6 @@ urlpatterns = [
     path("mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="changer_mot_de_passe"),
     path("mot-de-passe/termine/", views.ChangerMotDePasseTermineView.as_view(), name="changer_mot_de_passe_termine"),
 ]
-
 
 === ./comptes/utils.py ===
 import re
@@ -4149,7 +4196,6 @@ def normaliser_telephone(valeur: str) -> str:
         if valeur.startswith(prefixe):
             return valeur[len(prefixe):]
     return valeur
-
 
 === ./comptes/views.py ===
 from abonnements.models import Abonnement
@@ -4270,9 +4316,7 @@ class ChangerMotDePasseView(LoginRequiredMixin, auth_views.PasswordChangeView):
 class ChangerMotDePasseTermineView(LoginRequiredMixin, auth_views.PasswordChangeDoneView):
     template_name = "comptes/changer_mot_de_passe_termine.html"
 
-
 === ./core/__init__.py ===
-
 
 
 === ./core/admin.py ===
@@ -4327,14 +4371,12 @@ class VideoSalleAdmin(admin.ModelAdmin):
     list_editable = ("actif", "ordre_affichage")
     list_filter = ("type_video", "actif", "programme")
 
-
 === ./core/apps.py ===
 from django.apps import AppConfig
 
 
 class CoreConfig(AppConfig):
     name = 'core'
-
 
 === ./core/chatbot.py ===
 """
@@ -4354,6 +4396,11 @@ import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# gemini-1.5-flash est arrêté par Google (retiré, renvoie 404 sur tout appel).
+# gemini-3.5-flash-lite est GA (production-ready) et adapté à un usage léger
+# comme un chatbot de site. À surveiller sur https://ai.google.dev/gemini-api/docs/deprecations
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 # Limite de messages par visiteur par jour (stockée en session), pour une
 # UX de courtoisie ("tu as atteint ta limite"). La vraie mesure anti-abus
@@ -4436,7 +4483,7 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
 
     try:
         from google import genai
-        from google.genai import types
+        from google.genai import errors, types
 
         client = genai.Client(api_key=api_key)
         historique_contenu = [
@@ -4444,17 +4491,24 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
             for tour in historique
         ]
         chat = client.chats.create(
-            model="gemini-1.5-flash",
+            model=GEMINI_MODEL,
             history=historique_contenu,
             config=types.GenerateContentConfig(system_instruction=_instructions_systeme()),
         )
         response = chat.send_message(message)
         texte = (response.text or "").strip()
         return texte or MESSAGE_REPLI
-    except Exception:
-        logger.exception("Échec de l'appel Gemini pour le chatbot du site.")
+    except errors.APIError as exc:
+        # exc.code = code HTTP renvoyé par l'API Gemini (404 modèle inconnu/retiré,
+        # 429 quota dépassé, 403 clé restreinte/API non activée, 5xx panne Google...).
+        logger.error(
+            "Échec de l'appel Gemini pour le chatbot du site — code=%s status=%s message=%s",
+            exc.code, exc.status, exc.message,
+        )
         return MESSAGE_REPLI
-
+    except Exception:
+        logger.exception("Échec inattendu (non-API) de l'appel Gemini pour le chatbot du site.")
+        return MESSAGE_REPLI
 
 === ./core/context_processors.py ===
 from actualites.models import Actualite
@@ -4489,13 +4543,10 @@ def site_config(request):
         "actualite_phare": actualite_phare,
     }
 
-
 === ./core/management/__init__.py ===
 
 
-
 === ./core/management/commands/__init__.py ===
-
 
 
 === ./core/management/commands/seed_tgym.py ===
@@ -4625,7 +4676,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
-
 
 === ./core/models.py ===
 from cloudinary_storage.storage import MediaCloudinaryStorage
@@ -4840,7 +4890,6 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
-
 
 === ./core/templates/core/accueil.html ===
 {% extends "base.html" %}
@@ -5120,7 +5169,6 @@ class Annonce(models.Model):
 
 {% endblock %}
 
-
 === ./core/templates/core/methode.html ===
 {% extends "base.html" %}
 
@@ -5174,7 +5222,6 @@ class Annonce(models.Model):
 
 {% endblock %}
 
-
 === ./core/templates/core/ou_nous_trouver.html ===
 {% extends "base.html" %}
 
@@ -5218,7 +5265,6 @@ class Annonce(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./core/templates/core/tarifs.html ===
 {% extends "base.html" %}
@@ -5291,7 +5337,6 @@ class Annonce(models.Model):
 {% endif %}
 
 {% endblock %}
-
 
 === ./core/tests.py ===
 import json
@@ -5565,7 +5610,6 @@ class ChatbotMessageViewTests(TestCase):
         )
         self.assertNotIn("limite_atteinte", resp_autre_ip.json())
 
-
 === ./core/urls.py ===
 from django.urls import path
 
@@ -5580,7 +5624,6 @@ urlpatterns = [
     path("ou-nous-trouver/", views.ou_nous_trouver, name="ou_nous_trouver"),
     path("chatbot/message/", views.chatbot_message, name="chatbot_message"),
 ]
-
 
 === ./core/views.py ===
 import json
@@ -5737,7 +5780,6 @@ def chatbot_message(request):
 
     return JsonResponse({"reponse": reponse})
 
-
 === ./core/whatsapp.py ===
 """
 Générateur de liens WhatsApp pré-remplis (wa.me).
@@ -5811,7 +5853,6 @@ def build_generic_whatsapp_link(sujet: str = "") -> str:
         message = "Bonjour, j'aimerais avoir plus d'informations sur T-GYM."
     return build_whatsapp_link(message)
 
-
 === ./manage.py ===
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
@@ -5836,7 +5877,6 @@ def main():
 if __name__ == '__main__':
     main()
 
-
 === ./requirements.txt ===
 Django==4.2.30
 Pillow>=10.0
@@ -5849,7 +5889,6 @@ whitenoise==6.7.0
 gunicorn>=21.0,<22.0
 cloudinary>=1.40,<2.0
 django-cloudinary-storage>=0.3,<0.4
-
 
 === ./static/css/theme.css ===
 :root {
@@ -6749,7 +6788,6 @@ input:focus, textarea:focus, select:focus {
   .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
 }
 
-
 === ./templates/base.html ===
 {% load static %}
 <!DOCTYPE html>
@@ -7020,7 +7058,6 @@ input:focus, textarea:focus, select:focus {
 
 </body>
 </html>
-
 
 === ./templates/staff/base_staff.html ===
 {% load static %}
@@ -7352,7 +7389,6 @@ input:focus, textarea:focus, select:focus {
 === ./tgym_site/__init__.py ===
 
 
-
 === ./tgym_site/asgi.py ===
 """
 ASGI config for tgym_site project.
@@ -7370,7 +7406,6 @@ from django.core.asgi import get_asgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
 
 application = get_asgi_application()
-
 
 === ./tgym_site/settings.py ===
 """
@@ -7645,7 +7680,6 @@ if IS_PRODUCTION:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
 
-
 === ./tgym_site/urls.py ===
 """
 URL configuration for tgym_site project.
@@ -7681,7 +7715,6 @@ if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-
 === ./tgym_site/wsgi.py ===
 """
 WSGI config for tgym_site project.
@@ -7699,5 +7732,4 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
 
 application = get_wsgi_application()
-
 

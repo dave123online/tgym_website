@@ -268,3 +268,4 @@ class ChatbotMessageViewTests(TestCase):
             HTTP_X_FORWARDED_FOR="41.138.10.99",
         )
         self.assertNotIn("limite_atteinte", resp_autre_ip.json())
+

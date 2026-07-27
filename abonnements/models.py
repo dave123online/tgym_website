@@ -335,3 +335,4 @@ class TemplateWhatsApp(models.Model):
         verbose_name = "Template WhatsApp"
         verbose_name_plural = "Templates WhatsApp"
         ordering = ["intitule"]
+

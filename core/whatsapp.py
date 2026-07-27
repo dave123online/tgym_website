@@ -69,3 +69,4 @@ def build_generic_whatsapp_link(sujet: str = "") -> str:
     else:
         message = "Bonjour, j'aimerais avoir plus d'informations sur T-GYM."
     return build_whatsapp_link(message)
+

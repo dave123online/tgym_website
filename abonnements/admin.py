@@ -175,3 +175,4 @@ class TemplateWhatsAppAdmin(admin.ModelAdmin):
     list_filter = ("actif", "categorie", "langue")
     search_fields = ("intitule", "nom_meta")
     change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"
+

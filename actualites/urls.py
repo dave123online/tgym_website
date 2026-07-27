@@ -8,3 +8,4 @@ urlpatterns = [
     path("actualites/", views.actualites, name="actualites"),
     path("actualites/<slug:slug>/", views.actualite_detail, name="actualite_detail"),
 ]
+
