@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from actualites.models import Actualite
 from coaching.models import Programme
 from core.models import Annonce, SiteConfig
@@ -23,9 +25,19 @@ def site_config(request):
         .first()
     )
 
+    # URL canonique forcée sur le domaine principal (SITE_URL), quel que
+    # soit le domaine réellement utilisé pour accéder à la page. Utile
+    # même une fois les redirections 301 .htaccess de .online/.site en
+    # place : ça élimine aussi les variantes www/non-www et les query
+    # strings de tracking (?utm_...) qui, sans canonical, seraient vues
+    # par Google comme des pages dupliquées de la même page.
+    canonical_url = f"{settings.SITE_URL.rstrip('/')}{request.path}"
+
     return {
         "site_config": SiteConfig.get_solo(),
         "annonce_active": annonce_active,
         "programme_phare": programme_phare,
         "actualite_phare": actualite_phare,
+        "canonical_url": canonical_url,
     }
+

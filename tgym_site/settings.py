@@ -253,7 +253,7 @@ ADMIN_WHATSAPP_NUMBER = os.environ.get("ADMIN_WHATSAPP_NUMBER", "")
 # Domaine public du site (sans slash final), utilisé pour construire des
 # liens absolus envoyés hors requête HTTP (ex: notif admin d'escalade
 # WhatsApp qui pointe vers /staff/conversations/<pk>/).
-SITE_URL = os.environ.get("SITE_URL", "https://tgym.onrender.com")
+SITE_URL = os.environ.get("SITE_URL", "https://tgymbenin.com")
 CRON_SECRET_TOKEN = os.environ.get("CRON_SECRET_TOKEN", "")
 # Nom + langue du template Meta pré-approuvé utilisé pour la relance
 # d'abonnement (à créer et faire approuver côté Meta Business Manager).
