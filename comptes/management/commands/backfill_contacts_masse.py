@@ -27,20 +27,23 @@ class Command(BaseCommand):
         for profil in profils:
             telephone = numero_international(profil.telephone)
             nom = profil.user.get_full_name() or profil.user.username
+            en_cours = any(a.est_en_cours() for a in profil.user.abonnements.all())
 
             contact, cree = ContactMasse.objects.get_or_create(
                 telephone=telephone,
-                defaults={"nom": nom, "actif": True, "note": "Auto : adhérent (backfill)"},
+                defaults={"nom": nom, "actif": en_cours, "note": "Auto : adhérent (backfill)"},
             )
 
             if cree:
                 crees += 1
-                self.stdout.write(f"  → {nom} ({telephone}) : créé")
-            elif not contact.actif:
-                contact.actif = True
+                statut = "en cours" if en_cours else "abonnement expiré/absent → en pause"
+                self.stdout.write(f"  → {nom} ({telephone}) : créé ({statut})")
+            elif contact.actif != en_cours:
+                contact.actif = en_cours
                 contact.save(update_fields=["actif"])
                 reactives += 1
-                self.stdout.write(f"  → {nom} ({telephone}) : réactivé")
+                statut = "réactivé" if en_cours else "mis en pause (abonnement expiré)"
+                self.stdout.write(f"  → {nom} ({telephone}) : {statut}")
             else:
                 deja_actifs += 1
 

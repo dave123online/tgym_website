@@ -1,7 +1,13 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
 <h1>{{ title }}</h1>
-<p><strong>{{ nb_contacts }}</strong> contact(s) actif(s) sélectionné(s) recevront ce template.</p>
+<p><strong>{{ nb_contacts }}</strong> contact(s) sélectionné(s) recevront ce template.</p>
+{% if nb_inactifs %}
+  <p style="color:#a94442; font-weight:bold;">
+    ⚠ {{ nb_inactifs }} contact(s) marqué(s) comme inactif(s) sont inclus dans cette sélection.
+    Ils recevront quand même le message si tu confirmes l'envoi.
+  </p>
+{% endif %}
 
 <form method="post">
   {% csrf_token %}

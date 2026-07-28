@@ -297,6 +297,45 @@ class ContactMasse(models.Model):
         ordering = ["nom"]
 
 
+def synchroniser_contact_masse_pour_user(user) -> None:
+    """
+    Recalcule ContactMasse.actif pour le contact correspondant à `user`, à
+    partir du rôle de son Profil ET de son statut d'abonnement réel
+    (Abonnement.est_en_cours()) — pas seulement du rôle : un adhérent dont
+    l'abonnement a expiré ne doit pas rester compté comme actif dans la
+    liste de diffusion tant qu'il n'a pas renouvelé.
+
+    Appelée depuis deux points, pour rester à jour dans les deux sens :
+      - comptes.signals (post_save sur Profil) : rôle qui devient/reste
+        ADHERENT, ou téléphone renseigné après coup.
+      - abonnements.signals (post_save sur Abonnement) : nouvel
+        abonnement souscrit, renouvelé, ou expiré/résilié (actif=False).
+
+    Ne crée jamais de contact ici (uniquement mis à jour si déjà
+    existant) — la création reste la responsabilité de comptes.signals,
+    déclenchée au moment où le rôle passe à ADHERENT.
+
+    Import de Profil fait localement pour éviter toute dépendance
+    circulaire au chargement des apps entre `abonnements` et `comptes`.
+    """
+    from comptes.models import Profil
+    from core.whatsapp import numero_international
+
+    profil = getattr(user, "profil", None)
+    if profil is None or profil.role != Profil.Role.ADHERENT or not profil.telephone:
+        return
+
+    telephone = numero_international(profil.telephone)
+    contact = ContactMasse.objects.filter(telephone=telephone).first()
+    if contact is None:
+        return
+
+    en_cours = any(a.est_en_cours() for a in user.abonnements.all())
+    if contact.actif != en_cours:
+        contact.actif = en_cours
+        contact.save(update_fields=["actif"])
+
+
 class TemplateWhatsApp(models.Model):
     """
     Référence un template WhatsApp pré-approuvé par Meta, avec la liste de
@@ -335,3 +374,5 @@ class TemplateWhatsApp(models.Model):
         verbose_name = "Template WhatsApp"
         verbose_name_plural = "Templates WhatsApp"
         ordering = ["intitule"]
+
+
