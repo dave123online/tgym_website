@@ -25,7 +25,7 @@ import logging
 from django.conf import settings
 
 from .models import ConversationWhatsApp, MessageWhatsApp
-from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_texte_libre
+from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_template, envoyer_texte_libre
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,27 @@ HISTORIQUE_MAX_MESSAGES = 14
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
 )
+
+# Template Meta approuvé pour la notification admin à l'escalade — nécessaire
+# car le texte libre (envoyer_texte_libre) exige une fenêtre de session
+# ouverte de 24h côté destinataire, ce qui n'est généralement pas le cas
+# pour un numéro admin qui n'a pas récemment écrit au bot. Un template
+# business-initiated n'a pas cette contrainte.
+#
+# Corps du template à enregistrer sur Meta Business Manager (catégorie
+# Utility) :
+#   Escalade T-GYM WhatsApp
+#   Le client {{1}} a besoin d'assistance.
+#
+#   Voir la conversation : {{2}}
+#   Merci.
+#
+# Note : Meta exige des variables numérotées {{1}}, {{2}}... dans le corps
+# du template (les noms comme {{nom_client}}/{{lien}} ne sont pas
+# supportés en dehors de la fonctionnalité named-parameters, encore peu
+# répandue) — {{1}} = nom_client, {{2}} = lien, dans cet ordre.
+ADMIN_TEMPLATE_NAME = "escalade_conversation_client"
+ADMIN_TEMPLATE_LANGUE = "fr"
 
 # Mots-clés déclenchant une escalade immédiate, sans passer par Gemini.
 # Volontairement large plutôt que précis : le coût d'une escalade
@@ -79,28 +100,54 @@ def _notifier_admin(conversation: ConversationWhatsApp, raison: str) -> None:
     d'être escaladée, avec un lien direct (wa.me) vers l'échange avec le
     client — pour ne pas avoir à chercher le numéro dans l'admin Django.
 
+    Passe par le template Meta approuvé ADMIN_TEMPLATE_NAME (business-
+    initiated, pas de contrainte de fenêtre 24h). Tant que ce template
+    n'est pas encore validé par Meta, l'envoi échoue avec
+    EnvoiWhatsAppIndisponible : on retombe alors sur le texte libre, qui ne
+    fonctionnera que si l'admin a lui-même écrit au bot dans les 24h.
+
     N'échoue jamais bruyamment : si ADMIN_WHATSAPP_NUMBER n'est pas
-    configuré, ou si l'envoi échoue, on logue et on continue (le client a
-    déjà reçu son message d'escalade, l'essentiel est fait).
+    configuré, ou si les deux tentatives d'envoi échouent, on logue et on
+    continue (le client a déjà reçu son message d'escalade, l'essentiel
+    est fait).
     """
     numero_admin = getattr(settings, "ADMIN_WHATSAPP_NUMBER", "")
     if not numero_admin:
         logger.info("ADMIN_WHATSAPP_NUMBER absent — notification admin non envoyée.")
         return
 
-    lien_conversation = f"https://wa.me/{conversation.wa_id.lstrip('+')}"
+    lien_conversation = f"{settings.SITE_URL}/staff/conversations/{conversation.pk}/"
+
+    try:
+        envoyer_template(
+            numero_admin,
+            ADMIN_TEMPLATE_NAME,
+            ADMIN_TEMPLATE_LANGUE,
+            [conversation.wa_id, lien_conversation],
+            categorie="Utility",
+        )
+        return
+    except EnvoiWhatsAppIndisponible:
+        logger.warning(
+            "Échec d'envoi du template admin (%s) pour la conversation %s — "
+            "template pas encore approuvé sur Meta, ou paramètres incorrects. "
+            "Repli sur texte libre.",
+            ADMIN_TEMPLATE_NAME,
+            conversation.wa_id,
+        )
+
     message = (
         f"🔔 Escalade T-GYM WhatsApp\n"
-        f"Client : {conversation.wa_id}\n"
-        f"Raison : {raison}\n"
-        f"Conversation : {lien_conversation}"
+        f"Le client {conversation.wa_id} a besoin d'assistance.\n\n"
+        f"Voir la conversation : {lien_conversation}\n"
+        f"Merci."
     )
-
     try:
         envoyer_texte_libre(numero_admin, message)
     except EnvoiWhatsAppIndisponible:
         logger.exception(
-            "Échec d'envoi de la notification admin pour la conversation %s.", conversation.wa_id
+            "Échec d'envoi de la notification admin (template ET texte libre) "
+            "pour la conversation %s.", conversation.wa_id
         )
 
 
