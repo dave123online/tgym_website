@@ -10,4 +10,5 @@ urlpatterns = [
     path("tarifs/", views.tarifs, name="tarifs"),
     path("ou-nous-trouver/", views.ou_nous_trouver, name="ou_nous_trouver"),
     path("chatbot/message/", views.chatbot_message, name="chatbot_message"),
+    path("politique-confidentialite/", views.politique_confidentialite, name="politique_confidentialite"),
 ]

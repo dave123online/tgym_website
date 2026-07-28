@@ -97,6 +97,9 @@ def ou_nous_trouver(request):
     contact_link = build_generic_whatsapp_link("comment vous trouver")
     return render(request, "core/ou_nous_trouver.html", {"contact_link": contact_link})
 
+def politique_confidentialite(request):
+    return render(request, "politique_confidentialite.html")
+
 
 @require_POST
 def chatbot_message(request):
