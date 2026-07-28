@@ -70,7 +70,6 @@ Tout se fait dans `/admin/` :
 
 Même logique qu'Akem FS : Render + WhiteNoise pour le statique, variables d'environnement pour `SECRET_KEY`/`DEBUG`/`ALLOWED_HOSTS`, Postgres en prod. Pas encore configuré — on le fera à l'étape déploiement.
 
-
 === ./WA_ID_PROCESS.md ===
 # Guide complet — Obtenir les identifiants WhatsApp Business API (Meta)
 
@@ -406,9 +405,7 @@ Les interfaces Meta changent souvent. Si un bouton a changé de place :
 
 Une fois tout ça fait, T-GYM pourra envoyer des relances automatiques à tous les adhérents dont l'abonnement expire. Tu veux qu'on passe à la suite (chatbot Gemini sur le site, ou déploiement Render) ?
 
-
 === ./abonnements/__init__.py ===
-
 
 
 === ./abonnements/admin.py ===
@@ -531,17 +528,74 @@ class ConversationWhatsAppAdmin(admin.ModelAdmin):
     nb_messages_factures.short_description = "Dont facturés"
 
 
+class StatutAbonnementFilter(admin.SimpleListFilter):
+    """
+    Filtre custom : ContactMasse n'a pas de FK vers User/Abonnement (il
+    couvre aussi les prospects sans compte), donc le rapprochement se fait
+    par numéro de téléphone normalisé avec Profil.telephone. Permet de
+    distinguer, dans la liste de diffusion, les adhérents dont
+    l'abonnement est réellement en cours de ceux dont il a expiré/été
+    résilié, et des contacts qui ne correspondent à aucun compte adhérent
+    (prospects, anciens clients saisis manuellement).
+    """
+
+    title = "Statut abonnement lié"
+    parameter_name = "statut_abonnement"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("en_cours", "Adhérent — abonnement en cours"),
+            ("expire", "Adhérent — abonnement expiré/résilié"),
+            ("sans_compte", "Aucun compte adhérent lié (prospect/autre)"),
+        ]
+
+    def queryset(self, request, queryset):
+        valeur = self.value()
+        if valeur is None:
+            return queryset
+
+        from comptes.models import Profil
+        from core.whatsapp import numero_international
+
+        telephones_en_cours = set()
+        telephones_expire = set()
+        profils = (
+            Profil.objects.filter(role=Profil.Role.ADHERENT)
+            .exclude(telephone="")
+            .select_related("user")
+            .prefetch_related("user__abonnements")
+        )
+        for profil in profils:
+            telephone = numero_international(profil.telephone)
+            en_cours = any(a.est_en_cours() for a in profil.user.abonnements.all())
+            (telephones_en_cours if en_cours else telephones_expire).add(telephone)
+
+        if valeur == "en_cours":
+            return queryset.filter(telephone__in=telephones_en_cours)
+        if valeur == "expire":
+            return queryset.filter(telephone__in=telephones_expire)
+        if valeur == "sans_compte":
+            return queryset.exclude(telephone__in=telephones_en_cours | telephones_expire)
+        return queryset
+
+
 @admin.register(ContactMasse)
 class ContactMasseAdmin(admin.ModelAdmin):
     list_display = ("nom", "telephone", "actif", "note", "date_ajout")
     list_editable = ("actif",)
-    list_filter = ("actif",)
+    list_filter = ("actif", StatutAbonnementFilter)
     search_fields = ("nom", "telephone", "note")
     actions = ["envoyer_template_en_masse"]
 
     @admin.action(description="Envoyer un template WhatsApp aux contacts sélectionnés")
     def envoyer_template_en_masse(self, request, queryset):
-        contacts = queryset.filter(actif=True)
+        # Volontairement PAS de filtre actif=True ici : le staff doit
+        # pouvoir choisir d'envoyer à tout le monde, uniquement aux actifs,
+        # ou uniquement aux inactifs, via les filtres de la liste puis la
+        # sélection des lignes. Forcer actif=True ici viderait
+        # silencieusement toute sélection de contacts inactifs.
+        contacts = queryset
+        nb_inactifs = contacts.filter(actif=False).count()
 
         if "appliquer" in request.POST:
             form = EnvoiMasseForm(request.POST)
@@ -577,6 +631,7 @@ class ContactMasseAdmin(admin.ModelAdmin):
                 "form": form,
                 "contacts": contacts,
                 "nb_contacts": contacts.count(),
+                "nb_inactifs": nb_inactifs,
                 "opts": self.model._meta,
                 "title": "Envoyer un template WhatsApp en masse",
             },
@@ -591,6 +646,7 @@ class TemplateWhatsAppAdmin(admin.ModelAdmin):
     change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"
 
 
+
 === ./abonnements/apps.py ===
 from django.apps import AppConfig
 
@@ -598,6 +654,8 @@ from django.apps import AppConfig
 class AbonnementsConfig(AppConfig):
     name = 'abonnements'
 
+    def ready(self):
+        import abonnements.signals  # noqa
 
 === ./abonnements/fixtures/templates_whatsapp.json ===
 [
@@ -649,7 +707,6 @@ class AbonnementsConfig(AppConfig):
   }
 ]
 
-
 === ./abonnements/forms.py ===
 from django import forms
 
@@ -671,7 +728,6 @@ class EnvoiMasseForm(forms.Form):
     def parametres_liste(self) -> list[str]:
         brut = self.cleaned_data.get("parametres", "")
         return [p.strip() for p in brut.split(",") if p.strip()]
-
 
 === ./abonnements/ia_relance.py ===
 """
@@ -774,13 +830,10 @@ def generer_message_relance(abonnement) -> tuple[str, bool]:
         )
         return _message_secours(abonnement), False
 
-
 === ./abonnements/management/__init__.py ===
 
 
-
 === ./abonnements/management/commands/__init__.py ===
-
 
 
 === ./abonnements/management/commands/envoyer_relances_whatsapp.py ===
@@ -832,7 +885,6 @@ class Command(BaseCommand):
             f"{envoyes} message(s) envoyé(s) automatiquement, "
             f"{laisses_en_attente} laissé(s) pour envoi manuel."
         ))
-
 
 === ./abonnements/management/commands/generer_relances.py ===
 from datetime import date, timedelta
@@ -896,7 +948,6 @@ class Command(BaseCommand):
             f"{crees} message(s) de relance créé(s), {ignores} déjà existant(s) ignoré(s) "
             f"(fenêtre : abonnements expirant d'ici {jours} jour(s))."
         ))
-
 
 === ./abonnements/models.py ===
 from datetime import date, timedelta
@@ -1198,6 +1249,45 @@ class ContactMasse(models.Model):
         ordering = ["nom"]
 
 
+def synchroniser_contact_masse_pour_user(user) -> None:
+    """
+    Recalcule ContactMasse.actif pour le contact correspondant à `user`, à
+    partir du rôle de son Profil ET de son statut d'abonnement réel
+    (Abonnement.est_en_cours()) — pas seulement du rôle : un adhérent dont
+    l'abonnement a expiré ne doit pas rester compté comme actif dans la
+    liste de diffusion tant qu'il n'a pas renouvelé.
+
+    Appelée depuis deux points, pour rester à jour dans les deux sens :
+      - comptes.signals (post_save sur Profil) : rôle qui devient/reste
+        ADHERENT, ou téléphone renseigné après coup.
+      - abonnements.signals (post_save sur Abonnement) : nouvel
+        abonnement souscrit, renouvelé, ou expiré/résilié (actif=False).
+
+    Ne crée jamais de contact ici (uniquement mis à jour si déjà
+    existant) — la création reste la responsabilité de comptes.signals,
+    déclenchée au moment où le rôle passe à ADHERENT.
+
+    Import de Profil fait localement pour éviter toute dépendance
+    circulaire au chargement des apps entre `abonnements` et `comptes`.
+    """
+    from comptes.models import Profil
+    from core.whatsapp import numero_international
+
+    profil = getattr(user, "profil", None)
+    if profil is None or profil.role != Profil.Role.ADHERENT or not profil.telephone:
+        return
+
+    telephone = numero_international(profil.telephone)
+    contact = ContactMasse.objects.filter(telephone=telephone).first()
+    if contact is None:
+        return
+
+    en_cours = any(a.est_en_cours() for a in user.abonnements.all())
+    if contact.actif != en_cours:
+        contact.actif = en_cours
+        contact.save(update_fields=["actif"])
+
+
 class TemplateWhatsApp(models.Model):
     """
     Référence un template WhatsApp pré-approuvé par Meta, avec la liste de
@@ -1237,6 +1327,24 @@ class TemplateWhatsApp(models.Model):
         verbose_name_plural = "Templates WhatsApp"
         ordering = ["intitule"]
 
+
+
+=== ./abonnements/signals.py ===
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+from .models import Abonnement, synchroniser_contact_masse_pour_user
+
+
+@receiver(post_save, sender=Abonnement)
+def synchroniser_contact_masse_abonnement(sender, instance, **kwargs):
+    """
+    À chaque souscription, renouvellement, ou clôture d'un Abonnement
+    (actif passé à False), recalcule si le contact WhatsApp correspondant
+    (ContactMasse) doit rester actif dans la liste de diffusion — cf.
+    synchroniser_contact_masse_pour_user() pour la logique complète.
+    """
+    synchroniser_contact_masse_pour_user(instance.user)
 
 === ./abonnements/templates/admin/abonnements/conversation_change_form.html ===
 {% extends "admin/change_form.html" %}
@@ -1360,7 +1468,6 @@ class TemplateWhatsApp(models.Model):
   </script>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/diffusion_etape1.html ===
 {% extends "admin/base_site.html" %}
 {% block content %}
@@ -1401,7 +1508,6 @@ class TemplateWhatsApp(models.Model):
   <p><input type="submit" value="Continuer"></p>
 </form>
 {% endblock %}
-
 
 === ./abonnements/templates/admin/abonnements/diffusion_etape2.html ===
 {% extends "admin/base_site.html" %}
@@ -1449,12 +1555,17 @@ class TemplateWhatsApp(models.Model):
 </form>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/envoi_masse.html ===
 {% extends "admin/base_site.html" %}
 {% block content %}
 <h1>{{ title }}</h1>
-<p><strong>{{ nb_contacts }}</strong> contact(s) actif(s) sélectionné(s) recevront ce template.</p>
+<p><strong>{{ nb_contacts }}</strong> contact(s) sélectionné(s) recevront ce template.</p>
+{% if nb_inactifs %}
+  <p style="color:#a94442; font-weight:bold;">
+    ⚠ {{ nb_inactifs }} contact(s) marqué(s) comme inactif(s) sont inclus dans cette sélection.
+    Ils recevront quand même le message si tu confirmes l'envoi.
+  </p>
+{% endif %}
 
 <form method="post">
   {% csrf_token %}
@@ -1474,14 +1585,12 @@ class TemplateWhatsApp(models.Model):
 </form>
 {% endblock %}
 
-
 === ./abonnements/templates/admin/abonnements/templatewhatsapp_changelist.html ===
 {% extends "admin/change_list.html" %}
 {% block object-tools-items %}
   <li><a href="{% url 'abonnements:diffusion_whatsapp' %}" class="button">📢 Diffuser un message</a></li>
   {{ block.super }}
 {% endblock %}
-
 
 === ./abonnements/tests.py ===
 from datetime import date, timedelta
@@ -1706,7 +1815,6 @@ class EnvoyerRelancesWhatsappCommandTests(TestCase):
         self.assertTrue(self.relance.envoye_automatiquement)
         self.assertIsNotNone(self.relance.envoye_le)
 
-
 === ./abonnements/urls.py ===
 from django.urls import path
 
@@ -1723,7 +1831,6 @@ urlpatterns = [
     path("staff/conversations/<int:pk>/", views_staff.detail_conversation, name="staff_conversation_detail"),
     path("staff/conversations/<int:pk>/mode/", views_staff.changer_mode_conversation, name="staff_conversation_mode"),
 ]
-
 
 === ./abonnements/views.py ===
 import hashlib
@@ -1847,7 +1954,7 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
 
     contenu = _extraire_contenu(msg)
 
-    MessageWhatsApp.objects.update_or_create(
+    _, created = MessageWhatsApp.objects.update_or_create(
         wamid=msg.get("id"),
         defaults={
             "conversation": conversation,
@@ -1858,6 +1965,17 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
             "payload_brut": msg,
         },
     )
+
+    if not created:
+        # Meta a renvoyé ce même wamid (retry webhook suite à un ACK trop
+        # lent côté serveur). Le message est déjà enregistré : ne PAS
+        # rappeler le bot, sinon on relance Gemini et on renvoie une
+        # réponse en double au client pour un seul message reçu.
+        logger.info(
+            "Webhook WhatsApp dupliqué (wamid=%s déjà traité) — bot non rappelé.",
+            msg.get("id"),
+        )
+        return
 
     from .whatsapp_bot import traiter_message_entrant
     try:
@@ -1893,6 +2011,7 @@ def _mettre_a_jour_statut(statut: dict) -> None:
     MessageWhatsApp.objects.filter(wamid=wamid).update(
         statut_livraison=statut.get("status", "")
     )
+
 
 
 === ./abonnements/views_cron.py ===
@@ -1931,7 +2050,6 @@ def declencher_relances(request):
         return JsonResponse({"status": "error"}, status=500)
 
     return JsonResponse({"status": "ok"})
-
 
 === ./abonnements/views_diffusion.py ===
 from django.contrib.admin.views.decorators import staff_member_required
@@ -2056,7 +2174,6 @@ def diffusion_whatsapp(request):
         "clients": User.objects.filter(profil__telephone__gt="").select_related("profil"),
     })
 
-
 === ./abonnements/views_reponse.py ===
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
@@ -2105,7 +2222,6 @@ def fenetre_service_ouverte(conversation: ConversationWhatsApp) -> bool:
         return False
     ecart = timezone.now() - dernier_message_entrant.date_envoi
     return ecart.total_seconds() < FENETRE_SERVICE_HEURES * 3600
-
 
 === ./abonnements/views_staff.py ===
 """
@@ -2177,7 +2293,6 @@ def changer_mode_conversation(request, pk):
             messages.error(request, "Mode invalide.")
 
     return redirect("abonnements:staff_conversation_detail", conversation.pk)
-
 
 === ./abonnements/whatsapp_api.py ===
 """
@@ -2474,7 +2589,6 @@ def envoyer_template_relance(abonnement) -> dict:
 
     return reponse_json
 
-
 === ./abonnements/whatsapp_bot.py ===
 """
 Bot Gemini pour les messages WhatsApp entrants.
@@ -2503,7 +2617,7 @@ import logging
 from django.conf import settings
 
 from .models import ConversationWhatsApp, MessageWhatsApp
-from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_texte_libre
+from .whatsapp_api import EnvoiWhatsAppIndisponible, envoyer_template, envoyer_texte_libre
 
 logger = logging.getLogger(__name__)
 
@@ -2520,6 +2634,27 @@ HISTORIQUE_MAX_MESSAGES = 14
 MESSAGE_ESCALADE = (
     "Je transmets ta demande à un conseiller T GYM, il te répond très vite. Merci pour ta patience 🙏"
 )
+
+# Template Meta approuvé pour la notification admin à l'escalade — nécessaire
+# car le texte libre (envoyer_texte_libre) exige une fenêtre de session
+# ouverte de 24h côté destinataire, ce qui n'est généralement pas le cas
+# pour un numéro admin qui n'a pas récemment écrit au bot. Un template
+# business-initiated n'a pas cette contrainte.
+#
+# Corps du template à enregistrer sur Meta Business Manager (catégorie
+# Utility) :
+#   Escalade T-GYM WhatsApp
+#   Le client {{1}} a besoin d'assistance.
+#
+#   Voir la conversation : {{2}}
+#   Merci.
+#
+# Note : Meta exige des variables numérotées {{1}}, {{2}}... dans le corps
+# du template (les noms comme {{nom_client}}/{{lien}} ne sont pas
+# supportés en dehors de la fonctionnalité named-parameters, encore peu
+# répandue) — {{1}} = nom_client, {{2}} = lien, dans cet ordre.
+ADMIN_TEMPLATE_NAME = "escalade_conversation_client"
+ADMIN_TEMPLATE_LANGUE = "fr"
 
 # Mots-clés déclenchant une escalade immédiate, sans passer par Gemini.
 # Volontairement large plutôt que précis : le coût d'une escalade
@@ -2547,6 +2682,64 @@ def _escalader(conversation: ConversationWhatsApp, raison: str) -> None:
     except EnvoiWhatsAppIndisponible:
         logger.exception(
             "Échec d'envoi du message d'escalade pour la conversation %s.", conversation.wa_id
+        )
+
+    _notifier_admin(conversation, raison)
+
+
+def _notifier_admin(conversation: ConversationWhatsApp, raison: str) -> None:
+    """Prévient un conseiller humain sur WhatsApp qu'une conversation vient
+    d'être escaladée, avec un lien direct (wa.me) vers l'échange avec le
+    client — pour ne pas avoir à chercher le numéro dans l'admin Django.
+
+    Passe par le template Meta approuvé ADMIN_TEMPLATE_NAME (business-
+    initiated, pas de contrainte de fenêtre 24h). Tant que ce template
+    n'est pas encore validé par Meta, l'envoi échoue avec
+    EnvoiWhatsAppIndisponible : on retombe alors sur le texte libre, qui ne
+    fonctionnera que si l'admin a lui-même écrit au bot dans les 24h.
+
+    N'échoue jamais bruyamment : si ADMIN_WHATSAPP_NUMBER n'est pas
+    configuré, ou si les deux tentatives d'envoi échouent, on logue et on
+    continue (le client a déjà reçu son message d'escalade, l'essentiel
+    est fait).
+    """
+    numero_admin = getattr(settings, "ADMIN_WHATSAPP_NUMBER", "")
+    if not numero_admin:
+        logger.info("ADMIN_WHATSAPP_NUMBER absent — notification admin non envoyée.")
+        return
+
+    lien_conversation = f"{settings.SITE_URL}/staff/conversations/{conversation.pk}/"
+
+    try:
+        envoyer_template(
+            numero_admin,
+            ADMIN_TEMPLATE_NAME,
+            ADMIN_TEMPLATE_LANGUE,
+            [conversation.wa_id, lien_conversation],
+            categorie="Utility",
+        )
+        return
+    except EnvoiWhatsAppIndisponible:
+        logger.warning(
+            "Échec d'envoi du template admin (%s) pour la conversation %s — "
+            "template pas encore approuvé sur Meta, ou paramètres incorrects. "
+            "Repli sur texte libre.",
+            ADMIN_TEMPLATE_NAME,
+            conversation.wa_id,
+        )
+
+    message = (
+        f"🔔 Escalade T-GYM WhatsApp\n"
+        f"Le client {conversation.wa_id} a besoin d'assistance.\n\n"
+        f"Voir la conversation : {lien_conversation}\n"
+        f"Merci."
+    )
+    try:
+        envoyer_texte_libre(numero_admin, message)
+    except EnvoiWhatsAppIndisponible:
+        logger.exception(
+            "Échec d'envoi de la notification admin (template ET texte libre) "
+            "pour la conversation %s.", conversation.wa_id
         )
 
 
@@ -2707,11 +2900,8 @@ def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> N
         envoyer_texte_libre(conversation.wa_id, reponse)
     except EnvoiWhatsAppIndisponible:
         logger.exception("Échec d'envoi de la réponse bot pour la conversation %s.", conversation.wa_id)
-        _escalader(conversation, raison="Échec technique d'envoi de la réponse bot")
-
 
 === ./actualites/__init__.py ===
-
 
 
 === ./actualites/admin.py ===
@@ -2734,14 +2924,12 @@ class ActualiteAdmin(admin.ModelAdmin):
         ("Publication", {"fields": ("is_featured", "est_publiee", "date_publication")}),
     )
 
-
 === ./actualites/apps.py ===
 from django.apps import AppConfig
 
 
 class ActualitesConfig(AppConfig):
     name = 'actualites'
-
 
 === ./actualites/models.py ===
 from django.db import models
@@ -2799,7 +2987,6 @@ class Actualite(models.Model):
         verbose_name_plural = "Actualités"
         ordering = ["-date_publication"]
 
-
 === ./actualites/templates/actualites/actualite_detail.html ===
 {% extends "base.html" %}
 
@@ -2827,7 +3014,6 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./actualites/templates/actualites/actualites.html ===
 {% extends "base.html" %}
@@ -2862,7 +3048,6 @@ class Actualite(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./actualites/tests.py ===
 from django.test import TestCase
@@ -2916,7 +3101,6 @@ class ActualitesViewsTests(TestCase):
         resp = self.client.get(reverse("actualites:actualite_detail", args=["inexistant"]))
         self.assertEqual(resp.status_code, 404)
 
-
 === ./actualites/urls.py ===
 from django.urls import path
 
@@ -2928,7 +3112,6 @@ urlpatterns = [
     path("actualites/", views.actualites, name="actualites"),
     path("actualites/<slug:slug>/", views.actualite_detail, name="actualite_detail"),
 ]
-
 
 === ./actualites/views.py ===
 from django.shortcuts import get_object_or_404, render
@@ -2944,7 +3127,6 @@ def actualites(request):
 def actualite_detail(request, slug):
     actualite = get_object_or_404(Actualite, slug=slug, est_publiee=True)
     return render(request, "actualites/actualite_detail.html", {"actualite": actualite})
-
 
 === ./build.sh ===
 #!/usr/bin/env bash
@@ -2966,9 +3148,7 @@ if [ "$DJANGO_SUPERUSER_USERNAME" ]; then
   python manage.py createsuperuser --noinput || true
 fi
 
-
 === ./coaching/__init__.py ===
-
 
 
 === ./coaching/admin.py ===
@@ -2991,14 +3171,12 @@ class ProgrammeAdmin(admin.ModelAdmin):
         ("Affichage", {"fields": ("est_phare", "actif", "ordre_affichage")}),
     )
 
-
 === ./coaching/apps.py ===
 from django.apps import AppConfig
 
 
 class CoachingConfig(AppConfig):
     name = 'coaching'
-
 
 === ./coaching/models.py ===
 from django.db import models
@@ -3050,7 +3228,6 @@ class Programme(models.Model):
         verbose_name = "Programme"
         verbose_name_plural = "Programmes"
         ordering = ["ordre_affichage", "titre"]
-
 
 === ./coaching/templates/coaching/programme_detail.html ===
 {% extends "base.html" %}
@@ -3111,7 +3288,6 @@ class Programme(models.Model):
 
 {% endblock %}
 
-
 === ./coaching/templates/coaching/programmes.html ===
 {% extends "base.html" %}
 
@@ -3144,7 +3320,6 @@ class Programme(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./coaching/tests.py ===
 from django.test import TestCase
@@ -3216,7 +3391,6 @@ class ProgrammesViewsTests(TestCase):
         )
         self.assertContains(resp, "wa.me")
 
-
 === ./coaching/urls.py ===
 from django.urls import path
 
@@ -3228,7 +3402,6 @@ urlpatterns = [
     path("programmes/", views.programmes, name="programmes"),
     path("programmes/<slug:slug>/", views.programme_detail, name="programme_detail"),
 ]
-
 
 === ./coaching/views.py ===
 from django.shortcuts import get_object_or_404, render
@@ -3252,9 +3425,7 @@ def programme_detail(request, slug):
         "contact_link": contact_link,
     })
 
-
 === ./comptes/__init__.py ===
-
 
 
 === ./comptes/admin.py ===
@@ -3313,7 +3484,6 @@ class ProfilAdmin(admin.ModelAdmin):
     list_editable = ("role",)
     search_fields = ("user__username", "user__first_name", "user__last_name", "telephone")
 
-
 === ./comptes/apps.py ===
 from django.apps import AppConfig
 
@@ -3325,7 +3495,6 @@ class ComptesConfig(AppConfig):
 
     def ready(self):
         import comptes.signals  # noqa
-
 
 === ./comptes/backends.py ===
 from django.contrib.auth.backends import ModelBackend
@@ -3386,7 +3555,6 @@ class IdentifiantOuTelephoneBackend(ModelBackend):
                 return profil
         return None
 
-
 === ./comptes/decorators.py ===
 """
 Décorateurs de contrôle d'accès par rôle.
@@ -3416,7 +3584,6 @@ def role_required(*roles):
             return vue(request, *args, **kwargs)
         return wrapper
     return decorateur
-
 
 === ./comptes/forms.py ===
 import secrets
@@ -3489,14 +3656,75 @@ class CreationCompteAdherentForm(forms.Form):
     def clean_telephone(self):
         return normaliser_telephone(self.cleaned_data["telephone"])
 
-
 === ./comptes/management/__init__.py ===
-
 
 
 === ./comptes/management/commands/__init__.py ===
 
 
+=== ./comptes/management/commands/backfill_contacts_masse.py ===
+from django.core.management.base import BaseCommand
+
+from abonnements.models import ContactMasse
+from comptes.models import Profil
+from core.whatsapp import numero_international
+
+
+class Command(BaseCommand):
+    help = (
+        "Rattrape les adhérents déjà en base avant la mise en place du signal "
+        "comptes.signals.synchroniser_contact_masse : crée (ou réactive) dans "
+        "ContactMasse une entrée pour chaque Profil de rôle ADHERENT ayant un "
+        "téléphone renseigné. À exécuter une seule fois après déploiement du "
+        "signal — celui-ci prend ensuite le relais automatiquement pour tous "
+        "les nouveaux comptes et les modifications futures."
+    )
+
+    def handle(self, *args, **options):
+        profils = (
+            Profil.objects.filter(role=Profil.Role.ADHERENT)
+            .exclude(telephone="")
+            .select_related("user")
+        )
+
+        crees, reactives, deja_actifs, ignores_sans_telephone = 0, 0, 0, 0
+
+        for profil in profils:
+            telephone = numero_international(profil.telephone)
+            nom = profil.user.get_full_name() or profil.user.username
+            en_cours = any(a.est_en_cours() for a in profil.user.abonnements.all())
+
+            contact, cree = ContactMasse.objects.get_or_create(
+                telephone=telephone,
+                defaults={"nom": nom, "actif": en_cours, "note": "Auto : adhérent (backfill)"},
+            )
+
+            if cree:
+                crees += 1
+                statut = "en cours" if en_cours else "abonnement expiré/absent → en pause"
+                self.stdout.write(f"  → {nom} ({telephone}) : créé ({statut})")
+            elif contact.actif != en_cours:
+                contact.actif = en_cours
+                contact.save(update_fields=["actif"])
+                reactives += 1
+                statut = "réactivé" if en_cours else "mis en pause (abonnement expiré)"
+                self.stdout.write(f"  → {nom} ({telephone}) : {statut}")
+            else:
+                deja_actifs += 1
+
+        total_sans_telephone = Profil.objects.filter(
+            role=Profil.Role.ADHERENT, telephone=""
+        ).count()
+        if total_sans_telephone:
+            ignores_sans_telephone = total_sans_telephone
+            self.stdout.write(
+                f"  ⚠ {ignores_sans_telephone} adhérent(s) sans téléphone renseigné, ignoré(s)."
+            )
+
+        self.stdout.write(self.style.SUCCESS(
+            f"{crees} contact(s) créé(s), {reactives} réactivé(s), "
+            f"{deja_actifs} déjà à jour, {ignores_sans_telephone} ignoré(s) (sans téléphone)."
+        ))
 
 === ./comptes/management/commands/backfill_role_staff.py ===
 from django.contrib.auth.models import User
@@ -3562,7 +3790,6 @@ class Command(BaseCommand):
                     f"{corrections} rôle(s) mis à STAFF)."
                 )
             )
-
 
 === ./comptes/middleware.py ===
 """
@@ -3653,7 +3880,6 @@ class AntiBruteForceMiddleware:
 
         return response
 
-
 === ./comptes/models.py ===
 from django.contrib.auth.models import User
 from django.db import models
@@ -3703,7 +3929,6 @@ class Profil(models.Model):
         verbose_name_plural = "Profils"
         ordering = ["user__username"]
 
-
 === ./comptes/signals.py ===
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -3737,6 +3962,70 @@ def creer_profil(sender, instance, created, **kwargs):
         if profil.role != Profil.Role.STAFF:
             profil.role = Profil.Role.STAFF
             profil.save(update_fields=["role"])
+
+
+@receiver(post_save, sender=Profil)
+def synchroniser_contact_masse(sender, instance, **kwargs):
+    """
+    Maintient la liste de diffusion WhatsApp (ContactMasse, dans
+    abonnements) synchronisée avec les Profils de rôle ADHERENT.
+
+    Déclenché à chaque save du Profil (création ET modification), pas
+    seulement à la création : le téléphone est souvent vide au moment où
+    le Profil est créé et rempli après coup, donc on doit re-vérifier à
+    chaque sauvegarde plutôt que de rater le cas si on ne regardait qu'à
+    la création.
+
+    - Profil ADHERENT + téléphone renseigné → contact créé/réactivé dans
+      ContactMasse, dédupliqué par téléphone (un adhérent qui existait
+      déjà comme contact manuel, ex: ancien prospect, n'est pas dupliqué).
+    - Profil qui n'est plus ADHERENT (passage à COACH/STAFF) → le contact
+      correspondant est désactivé (actif=False), jamais supprimé, pour
+      garder l'historique et pouvoir le réactiver si le rôle repasse à
+      ADHERENT plus tard.
+
+    Import de ContactMasse fait localement (et non en haut du fichier)
+    pour éviter tout risque de dépendance circulaire au chargement des
+    apps entre `comptes` et `abonnements`.
+
+    Profil.telephone est saisi au format local (ex: 94140535) alors que
+    ContactMasse.telephone attend le format international (ex:
+    22994140535, requis par l'API WhatsApp) — on passe donc par
+    numero_international() pour éviter de créer deux entrées différentes
+    pour un même numéro selon le format saisi.
+
+    actif reflète désormais rôle ADHERENT ET abonnement en cours combinés
+    (pas juste le rôle) : un adhérent sans abonnement actuellement valide
+    est créé/laissé en pause (actif=False) jusqu'à souscription. Le
+    signal abonnements.signals.synchroniser_contact_masse_abonnement
+    prend ensuite le relais à chaque souscription/expiration.
+    """
+    from abonnements.models import ContactMasse
+    from core.whatsapp import numero_international
+
+    nom = instance.user.get_full_name() or instance.user.username
+
+    if instance.role == Profil.Role.ADHERENT:
+        if not instance.telephone:
+            return
+        telephone = numero_international(instance.telephone)
+        en_cours = any(a.est_en_cours() for a in instance.user.abonnements.all())
+        contact, cree = ContactMasse.objects.get_or_create(
+            telephone=telephone,
+            defaults={"nom": nom, "actif": en_cours, "note": "Auto : adhérent"},
+        )
+        if not cree and contact.actif != en_cours:
+            contact.actif = en_cours
+            contact.save(update_fields=["actif"])
+        return
+
+    # Rôle COACH ou STAFF : on désactive le contact s'il existe, sans le
+    # supprimer (garde l'historique, réactivable si le rôle redevient
+    # ADHERENT).
+    if instance.telephone:
+        telephone = numero_international(instance.telephone)
+        ContactMasse.objects.filter(telephone=telephone, actif=True).update(actif=False)
+
 
 
 === ./comptes/templates/comptes/changer_mot_de_passe.html ===
@@ -3775,7 +4064,6 @@ def creer_profil(sender, instance, created, **kwargs):
 
 {% endblock %}
 
-
 === ./comptes/templates/comptes/changer_mot_de_passe_termine.html ===
 {% extends "base.html" %}
 
@@ -3790,7 +4078,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/connexion.html ===
 {% extends "base.html" %}
@@ -3821,7 +4108,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/creer_compte.html ===
 {% extends "base.html" %}
@@ -3879,7 +4165,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/templates/comptes/mon_espace.html ===
 {% extends "base.html" %}
@@ -3966,7 +4251,6 @@ def creer_profil(sender, instance, created, **kwargs):
 </section>
 
 {% endblock %}
-
 
 === ./comptes/tests.py ===
 from django.contrib.auth.models import User
@@ -4268,7 +4552,6 @@ class AntiBruteForceMiddlewareTests(TestCase):
         resp = self._echec()
         self.assertEqual(resp.status_code, 429)
 
-
 === ./comptes/urls.py ===
 from django.urls import path
 
@@ -4284,7 +4567,6 @@ urlpatterns = [
     path("mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="changer_mot_de_passe"),
     path("mot-de-passe/termine/", views.ChangerMotDePasseTermineView.as_view(), name="changer_mot_de_passe_termine"),
 ]
-
 
 === ./comptes/utils.py ===
 import re
@@ -4310,7 +4592,6 @@ def normaliser_telephone(valeur: str) -> str:
         if valeur.startswith(prefixe):
             return valeur[len(prefixe):]
     return valeur
-
 
 === ./comptes/views.py ===
 from abonnements.models import Abonnement
@@ -4431,9 +4712,7 @@ class ChangerMotDePasseView(LoginRequiredMixin, auth_views.PasswordChangeView):
 class ChangerMotDePasseTermineView(LoginRequiredMixin, auth_views.PasswordChangeDoneView):
     template_name = "comptes/changer_mot_de_passe_termine.html"
 
-
 === ./core/__init__.py ===
-
 
 
 === ./core/admin.py ===
@@ -4488,14 +4767,12 @@ class VideoSalleAdmin(admin.ModelAdmin):
     list_editable = ("actif", "ordre_affichage")
     list_filter = ("type_video", "actif", "programme")
 
-
 === ./core/apps.py ===
 from django.apps import AppConfig
 
 
 class CoreConfig(AppConfig):
     name = 'core'
-
 
 === ./core/chatbot.py ===
 """
@@ -4549,7 +4826,10 @@ def _contexte_site() -> str:
 
     lignes_plans = []
     for plan in Plan.objects.filter(actif=True).order_by("ordre_affichage"):
-        lignes_plans.append(f"- {plan.nom} : {plan.prix_affiche()} ({plan.description_courte})")
+        ligne = f"- {plan.nom} : {plan.prix_affiche()} ({plan.description_courte})"
+        if plan.inclus:
+            ligne += "\n  Inclus : " + ", ".join(plan.inclus)
+        lignes_plans.append(ligne)
     plans_texte = "\n".join(lignes_plans) or "Aucune formule active pour le moment."
 
     programme_phare = Programme.objects.filter(est_phare=True, actif=True).first()
@@ -4629,8 +4909,9 @@ def obtenir_reponse(historique: list[dict], message: str) -> str:
         logger.exception("Échec inattendu (non-API) de l'appel Gemini pour le chatbot du site.")
         return MESSAGE_REPLI
 
-
 === ./core/context_processors.py ===
+from django.conf import settings
+
 from actualites.models import Actualite
 from coaching.models import Programme
 from core.models import Annonce, SiteConfig
@@ -4656,20 +4937,27 @@ def site_config(request):
         .first()
     )
 
+    # URL canonique forcée sur le domaine principal (SITE_URL), quel que
+    # soit le domaine réellement utilisé pour accéder à la page. Utile
+    # même une fois les redirections 301 .htaccess de .online/.site en
+    # place : ça élimine aussi les variantes www/non-www et les query
+    # strings de tracking (?utm_...) qui, sans canonical, seraient vues
+    # par Google comme des pages dupliquées de la même page.
+    canonical_url = f"{settings.SITE_URL.rstrip('/')}{request.path}"
+
     return {
         "site_config": SiteConfig.get_solo(),
         "annonce_active": annonce_active,
         "programme_phare": programme_phare,
         "actualite_phare": actualite_phare,
+        "canonical_url": canonical_url,
     }
 
 
 === ./core/management/__init__.py ===
 
 
-
 === ./core/management/commands/__init__.py ===
-
 
 
 === ./core/management/commands/seed_tgym.py ===
@@ -4799,7 +5087,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Actualité de démo créée."))
         self.stdout.write(self.style.SUCCESS("Seed terminé."))
-
 
 === ./core/models.py ===
 from cloudinary_storage.storage import MediaCloudinaryStorage
@@ -5014,7 +5301,6 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
-
 
 === ./core/templates/core/accueil.html ===
 {% extends "base.html" %}
@@ -5294,7 +5580,6 @@ class Annonce(models.Model):
 
 {% endblock %}
 
-
 === ./core/templates/core/methode.html ===
 {% extends "base.html" %}
 
@@ -5348,7 +5633,6 @@ class Annonce(models.Model):
 
 {% endblock %}
 
-
 === ./core/templates/core/ou_nous_trouver.html ===
 {% extends "base.html" %}
 
@@ -5392,7 +5676,6 @@ class Annonce(models.Model):
 </section>
 
 {% endblock %}
-
 
 === ./core/templates/core/tarifs.html ===
 {% extends "base.html" %}
@@ -5465,7 +5748,6 @@ class Annonce(models.Model):
 {% endif %}
 
 {% endblock %}
-
 
 === ./core/tests.py ===
 import json
@@ -5739,7 +6021,6 @@ class ChatbotMessageViewTests(TestCase):
         )
         self.assertNotIn("limite_atteinte", resp_autre_ip.json())
 
-
 === ./core/urls.py ===
 from django.urls import path
 
@@ -5754,7 +6035,6 @@ urlpatterns = [
     path("ou-nous-trouver/", views.ou_nous_trouver, name="ou_nous_trouver"),
     path("chatbot/message/", views.chatbot_message, name="chatbot_message"),
 ]
-
 
 === ./core/views.py ===
 import json
@@ -5911,7 +6191,6 @@ def chatbot_message(request):
 
     return JsonResponse({"reponse": reponse})
 
-
 === ./core/whatsapp.py ===
 """
 Générateur de liens WhatsApp pré-remplis (wa.me).
@@ -5985,7 +6264,6 @@ def build_generic_whatsapp_link(sujet: str = "") -> str:
         message = "Bonjour, j'aimerais avoir plus d'informations sur T-GYM."
     return build_whatsapp_link(message)
 
-
 === ./manage.py ===
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
@@ -6010,7 +6288,6 @@ def main():
 if __name__ == '__main__':
     main()
 
-
 === ./requirements.txt ===
 Django==4.2.30
 Pillow>=10.0
@@ -6023,7 +6300,6 @@ whitenoise==6.7.0
 gunicorn>=21.0,<22.0
 cloudinary>=1.40,<2.0
 django-cloudinary-storage>=0.3,<0.4
-
 
 === ./static/css/theme.css ===
 :root {
@@ -6923,7 +7199,6 @@ input:focus, textarea:focus, select:focus {
   .temoignages-carrousel__lecteur { max-width: 280px; margin: 0 auto; }
 }
 
-
 === ./templates/base.html ===
 {% load static %}
 <!DOCTYPE html>
@@ -6932,6 +7207,7 @@ input:focus, textarea:focus, select:focus {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
+    <link rel="canonical" href="{{ canonical_url }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -7196,6 +7472,7 @@ input:focus, textarea:focus, select:focus {
 </html>
 
 
+
 === ./templates/staff/base_staff.html ===
 {% load static %}
 <!DOCTYPE html>
@@ -7278,7 +7555,6 @@ input:focus, textarea:focus, select:focus {
     {% block extra_body %}{% endblock %}
 </body>
 </html>
-
 
 === ./templates/staff/conversation_detail.html ===
 {% extends "staff/base_staff.html" %}
@@ -7452,7 +7728,6 @@ input:focus, textarea:focus, select:focus {
 </script>
 {% endblock %}
 
-
 === ./templates/staff/conversations_liste.html ===
 {% extends "staff/base_staff.html" %}
 
@@ -7525,9 +7800,7 @@ input:focus, textarea:focus, select:focus {
 </div>
 {% endblock %}
 
-
 === ./tgym_site/__init__.py ===
-
 
 
 === ./tgym_site/asgi.py ===
@@ -7547,7 +7820,6 @@ from django.core.asgi import get_asgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
 
 application = get_asgi_application()
-
 
 === ./tgym_site/settings.py ===
 """
@@ -7797,6 +8069,15 @@ WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
 WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
 WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")
+# Numéro (format international, ex: 22961234567, sans le +) prévenu
+# automatiquement par le bot WhatsApp (abonnements/whatsapp_bot.py) à chaque
+# escalade vers un humain, avec un lien direct vers la conversation client.
+# Laisser vide pour désactiver la notification (aucun impact sur le bot).
+ADMIN_WHATSAPP_NUMBER = os.environ.get("ADMIN_WHATSAPP_NUMBER", "")
+# Domaine public du site (sans slash final), utilisé pour construire des
+# liens absolus envoyés hors requête HTTP (ex: notif admin d'escalade
+# WhatsApp qui pointe vers /staff/conversations/<pk>/).
+SITE_URL = os.environ.get("SITE_URL", "https://tgymbenin.com")
 CRON_SECRET_TOKEN = os.environ.get("CRON_SECRET_TOKEN", "")
 # Nom + langue du template Meta pré-approuvé utilisé pour la relance
 # d'abonnement (à créer et faire approuver côté Meta Business Manager).
@@ -7858,7 +8139,6 @@ if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-
 === ./tgym_site/wsgi.py ===
 """
 WSGI config for tgym_site project.
@@ -7876,5 +8156,4 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tgym_site.settings')
 
 application = get_wsgi_application()
-
 

@@ -98,6 +98,7 @@ def diffusion_whatsapp(request):
                 envoyer_template(
                     user.profil.telephone, template.nom_meta, template.langue, parametres,
                     categorie=template.categorie,
+                    noms_parametres=template.variables,
                 )
                 reussites += 1
             except EnvoiWhatsAppIndisponible as exc:
