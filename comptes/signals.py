@@ -30,3 +30,61 @@ def creer_profil(sender, instance, created, **kwargs):
         if profil.role != Profil.Role.STAFF:
             profil.role = Profil.Role.STAFF
             profil.save(update_fields=["role"])
+
+
+@receiver(post_save, sender=Profil)
+def synchroniser_contact_masse(sender, instance, **kwargs):
+    """
+    Maintient la liste de diffusion WhatsApp (ContactMasse, dans
+    abonnements) synchronisée avec les Profils de rôle ADHERENT.
+
+    Déclenché à chaque save du Profil (création ET modification), pas
+    seulement à la création : le téléphone est souvent vide au moment où
+    le Profil est créé et rempli après coup, donc on doit re-vérifier à
+    chaque sauvegarde plutôt que de rater le cas si on ne regardait qu'à
+    la création.
+
+    - Profil ADHERENT + téléphone renseigné → contact créé/réactivé dans
+      ContactMasse, dédupliqué par téléphone (un adhérent qui existait
+      déjà comme contact manuel, ex: ancien prospect, n'est pas dupliqué).
+    - Profil qui n'est plus ADHERENT (passage à COACH/STAFF) → le contact
+      correspondant est désactivé (actif=False), jamais supprimé, pour
+      garder l'historique et pouvoir le réactiver si le rôle repasse à
+      ADHERENT plus tard.
+
+    Import de ContactMasse fait localement (et non en haut du fichier)
+    pour éviter tout risque de dépendance circulaire au chargement des
+    apps entre `comptes` et `abonnements`.
+
+    Profil.telephone est saisi au format local (ex: 94140535) alors que
+    ContactMasse.telephone attend le format international (ex:
+    22994140535, requis par l'API WhatsApp) — on passe donc par
+    numero_international() pour éviter de créer deux entrées différentes
+    pour un même numéro selon le format saisi.
+    """
+    from abonnements.models import ContactMasse
+    from core.whatsapp import numero_international
+
+    nom = instance.user.get_full_name() or instance.user.username
+
+    if instance.role == Profil.Role.ADHERENT:
+        if not instance.telephone:
+            return
+        telephone = numero_international(instance.telephone)
+        contact, cree = ContactMasse.objects.get_or_create(
+            telephone=telephone,
+            defaults={"nom": nom, "actif": True, "note": "Auto : adhérent"},
+        )
+        if not cree and not contact.actif:
+            contact.actif = True
+            contact.save(update_fields=["actif"])
+        return
+
+    # Rôle COACH ou STAFF : on désactive le contact s'il existe, sans le
+    # supprimer (garde l'historique, réactivable si le rôle redevient
+    # ADHERENT).
+    if instance.telephone:
+        telephone = numero_international(instance.telephone)
+        ContactMasse.objects.filter(telephone=telephone, actif=True).update(actif=False)
+
+
