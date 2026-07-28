@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
     <script>
         // Appliqué avant le rendu pour éviter un flash clair→sombre au
         // chargement. Lit la préférence enregistrée ; sinon ne fait rien
@@ -120,6 +121,10 @@
                 {% endif %}
             </p>
             <p>{{ site_config.adresse_zone }}</p>
+            <hr style="margin-top: 50px; opacity: 0.2;">
+            <p style="text-align: center; font-size: 0.85em; opacity: 0.6; margin-top: 20px;">
+                Site conçu par <a href="https://digitalneighbor.vercel.app" target="_blank" rel="noopener">Digital Neighbor</a>
+            </p>
         </div>
     </footer>
 
