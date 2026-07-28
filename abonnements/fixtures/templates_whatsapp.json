@@ -6,8 +6,8 @@
       "nom_meta": "promo_tgym",
       "langue": "fr",
       "variables": [
-        "prenom",
-        "nom_promo"
+        "nom",
+        "promo"
       ],
       "actif": true,
       "date_creation": "2026-07-25T00:00:00Z",
@@ -21,8 +21,8 @@
       "nom_meta": "rappel_tgym",
       "langue": "fr",
       "variables": [
-        "prenom",
-        "message"
+        "nom",
+        "texte"
       ],
       "actif": true,
       "date_creation": "2026-07-25T00:00:00Z",
@@ -36,9 +36,9 @@
       "nom_meta": "relance_abonnement",
       "langue": "fr",
       "variables": [
-        "prenom",
-        "nom_plan",
-        "date_fin"
+        "nom",
+        "nom_abonnement",
+        "date_de_fin"
       ],
       "actif": true,
       "date_creation": "2026-07-25T00:00:00Z",

@@ -63,6 +63,7 @@ MESSAGE_ESCALADE = (
 # répandue) — {{1}} = nom_client, {{2}} = lien, dans cet ordre.
 ADMIN_TEMPLATE_NAME = "escalade_conversation_client"
 ADMIN_TEMPLATE_LANGUE = "fr"
+ADMIN_TEMPLATE_NOMS_PARAMETRES = ["nom_client", "lien"]
 
 # Mots-clés déclenchant une escalade immédiate, sans passer par Gemini.
 # Volontairement large plutôt que précis : le coût d'une escalade
@@ -117,14 +118,16 @@ def _notifier_admin(conversation: ConversationWhatsApp, raison: str) -> None:
         return
 
     lien_conversation = f"{settings.SITE_URL}/staff/conversations/{conversation.pk}/"
+    nom_client = conversation.nom_contact or conversation.wa_id
 
     try:
         envoyer_template(
             numero_admin,
             ADMIN_TEMPLATE_NAME,
             ADMIN_TEMPLATE_LANGUE,
-            [conversation.wa_id, lien_conversation],
+            [nom_client, lien_conversation],
             categorie="Utility",
+            noms_parametres=ADMIN_TEMPLATE_NOMS_PARAMETRES,
         )
         return
     except EnvoiWhatsAppIndisponible:
