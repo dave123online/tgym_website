@@ -61,6 +61,12 @@ def synchroniser_contact_masse(sender, instance, **kwargs):
     22994140535, requis par l'API WhatsApp) — on passe donc par
     numero_international() pour éviter de créer deux entrées différentes
     pour un même numéro selon le format saisi.
+
+    actif reflète désormais rôle ADHERENT ET abonnement en cours combinés
+    (pas juste le rôle) : un adhérent sans abonnement actuellement valide
+    est créé/laissé en pause (actif=False) jusqu'à souscription. Le
+    signal abonnements.signals.synchroniser_contact_masse_abonnement
+    prend ensuite le relais à chaque souscription/expiration.
     """
     from abonnements.models import ContactMasse
     from core.whatsapp import numero_international
@@ -71,12 +77,13 @@ def synchroniser_contact_masse(sender, instance, **kwargs):
         if not instance.telephone:
             return
         telephone = numero_international(instance.telephone)
+        en_cours = any(a.est_en_cours() for a in instance.user.abonnements.all())
         contact, cree = ContactMasse.objects.get_or_create(
             telephone=telephone,
-            defaults={"nom": nom, "actif": True, "note": "Auto : adhérent"},
+            defaults={"nom": nom, "actif": en_cours, "note": "Auto : adhérent"},
         )
-        if not cree and not contact.actif:
-            contact.actif = True
+        if not cree and contact.actif != en_cours:
+            contact.actif = en_cours
             contact.save(update_fields=["actif"])
         return
 

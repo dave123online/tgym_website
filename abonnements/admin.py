@@ -117,17 +117,74 @@ class ConversationWhatsAppAdmin(admin.ModelAdmin):
     nb_messages_factures.short_description = "Dont facturés"
 
 
+class StatutAbonnementFilter(admin.SimpleListFilter):
+    """
+    Filtre custom : ContactMasse n'a pas de FK vers User/Abonnement (il
+    couvre aussi les prospects sans compte), donc le rapprochement se fait
+    par numéro de téléphone normalisé avec Profil.telephone. Permet de
+    distinguer, dans la liste de diffusion, les adhérents dont
+    l'abonnement est réellement en cours de ceux dont il a expiré/été
+    résilié, et des contacts qui ne correspondent à aucun compte adhérent
+    (prospects, anciens clients saisis manuellement).
+    """
+
+    title = "Statut abonnement lié"
+    parameter_name = "statut_abonnement"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("en_cours", "Adhérent — abonnement en cours"),
+            ("expire", "Adhérent — abonnement expiré/résilié"),
+            ("sans_compte", "Aucun compte adhérent lié (prospect/autre)"),
+        ]
+
+    def queryset(self, request, queryset):
+        valeur = self.value()
+        if valeur is None:
+            return queryset
+
+        from comptes.models import Profil
+        from core.whatsapp import numero_international
+
+        telephones_en_cours = set()
+        telephones_expire = set()
+        profils = (
+            Profil.objects.filter(role=Profil.Role.ADHERENT)
+            .exclude(telephone="")
+            .select_related("user")
+            .prefetch_related("user__abonnements")
+        )
+        for profil in profils:
+            telephone = numero_international(profil.telephone)
+            en_cours = any(a.est_en_cours() for a in profil.user.abonnements.all())
+            (telephones_en_cours if en_cours else telephones_expire).add(telephone)
+
+        if valeur == "en_cours":
+            return queryset.filter(telephone__in=telephones_en_cours)
+        if valeur == "expire":
+            return queryset.filter(telephone__in=telephones_expire)
+        if valeur == "sans_compte":
+            return queryset.exclude(telephone__in=telephones_en_cours | telephones_expire)
+        return queryset
+
+
 @admin.register(ContactMasse)
 class ContactMasseAdmin(admin.ModelAdmin):
     list_display = ("nom", "telephone", "actif", "note", "date_ajout")
     list_editable = ("actif",)
-    list_filter = ("actif",)
+    list_filter = ("actif", StatutAbonnementFilter)
     search_fields = ("nom", "telephone", "note")
     actions = ["envoyer_template_en_masse"]
 
     @admin.action(description="Envoyer un template WhatsApp aux contacts sélectionnés")
     def envoyer_template_en_masse(self, request, queryset):
-        contacts = queryset.filter(actif=True)
+        # Volontairement PAS de filtre actif=True ici : le staff doit
+        # pouvoir choisir d'envoyer à tout le monde, uniquement aux actifs,
+        # ou uniquement aux inactifs, via les filtres de la liste puis la
+        # sélection des lignes. Forcer actif=True ici viderait
+        # silencieusement toute sélection de contacts inactifs.
+        contacts = queryset
+        nb_inactifs = contacts.filter(actif=False).count()
 
         if "appliquer" in request.POST:
             form = EnvoiMasseForm(request.POST)
@@ -163,6 +220,7 @@ class ContactMasseAdmin(admin.ModelAdmin):
                 "form": form,
                 "contacts": contacts,
                 "nb_contacts": contacts.count(),
+                "nb_inactifs": nb_inactifs,
                 "opts": self.model._meta,
                 "title": "Envoyer un template WhatsApp en masse",
             },
@@ -175,3 +233,5 @@ class TemplateWhatsAppAdmin(admin.ModelAdmin):
     list_filter = ("actif", "categorie", "langue")
     search_fields = ("intitule", "nom_meta")
     change_list_template = "admin/abonnements/templatewhatsapp_changelist.html"
+
+
