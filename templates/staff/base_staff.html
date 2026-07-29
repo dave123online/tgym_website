@@ -59,6 +59,9 @@
         </div>
         <nav class="staff-header__nav">
             <a href="{% url 'abonnements:staff_conversations' %}">Conversations</a>
+            {% if request.user.is_staff %}
+                <a href="/admin/">Accéder à l'admin</a>
+            {% endif %}
             <a href="{% url 'core:accueil' %}">Retour au site</a>
             <a href="{% url 'comptes:deconnexion' %}">Déconnexion</a>
         </nav>
