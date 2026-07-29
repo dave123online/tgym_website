@@ -38,7 +38,7 @@ MESSAGE_REPLI = (
 
 
 def _contexte_site() -> str:
-    """Construit le contexte factuel (tarifs, horaires, programme phare...)
+    """Construit le contexte factuel (tarifs, horaires, programmes, FAQ...)
     injecté dans le prompt système, pour que le chatbot ne réponde qu'à
     partir de données réelles et à jour — jamais de mémoire/invention."""
     from abonnements.models import Plan
@@ -55,11 +55,25 @@ def _contexte_site() -> str:
         lignes_plans.append(ligne)
     plans_texte = "\n".join(lignes_plans) or "Aucune formule active pour le moment."
 
-    programme_phare = Programme.objects.filter(est_phare=True, actif=True).first()
-    programme_texte = (
-        f"{programme_phare.titre} — {programme_phare.accroche} (durée : {programme_phare.duree})"
-        if programme_phare else "Aucun programme phare actuellement mis en avant."
-    )
+    # Tous les programmes actifs (pas seulement le phare) — avant, un
+    # programme non mis en avant sur l'accueil était invisible pour
+    # Gemini, qui ne pouvait donc pas répondre sur son contenu/prix.
+    lignes_programmes = []
+    for programme in Programme.objects.filter(actif=True):
+        ligne = f"- {programme.titre} ({programme.duree}) : {programme.accroche}"
+        ligne += f"\n  Objectif : {programme.objectif}"
+        if programme.inclus:
+            ligne += "\n  Inclus : " + ", ".join(programme.inclus)
+        if programme.prix_fcfa:
+            ligne += f"\n  Prix : {programme.prix_fcfa} FCFA"
+        if programme.prix_note:
+            ligne += f" ({programme.prix_note})"
+        if programme.est_phare:
+            ligne += "\n  (Programme phare, mis en avant)"
+        lignes_programmes.append(ligne)
+    programmes_texte = "\n".join(lignes_programmes) or "Aucun programme actif actuellement."
+
+    faq_texte = config.faq_contexte.strip() or "Aucune FAQ renseignée."
 
     return (
         f"Nom de la salle : {config.nom}\n"
@@ -68,7 +82,8 @@ def _contexte_site() -> str:
         f"Localisation : {config.adresse_zone} — {config.adresse_reperes}\n"
         f"WhatsApp : {config.whatsapp_numero_1} ou {config.whatsapp_numero_2}\n\n"
         f"Formules tarifaires actives :\n{plans_texte}\n\n"
-        f"Programme phare : {programme_texte}"
+        f"Programmes actifs :\n{programmes_texte}\n\n"
+        f"FAQ et politiques de la salle :\n{faq_texte}"
     )
 
 

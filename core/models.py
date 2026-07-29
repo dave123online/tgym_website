@@ -59,6 +59,18 @@ class SiteConfig(models.Model):
                    "Si renseignée, prend le pas sur la photo de fond. Fichier léger recommandé (<10 Mo).",
     )
 
+    faq_contexte = models.TextField(
+        "FAQ / politiques (pour l'assistant IA)", blank=True, default="",
+        help_text=(
+            "Réponses aux questions récurrentes des clients — essai gratuit possible, "
+            "moyens de paiement acceptés, gel/pause d'abonnement, remboursement, règles "
+            "d'accès, tenue requise, etc. Texte libre (une question/réponse par ligne, "
+            "ou paragraphes), injecté tel quel dans le contexte du chatbot WhatsApp/site : "
+            "c'est la source la plus directe pour éviter qu'il ne réponde à côté ou "
+            "escalade vers un humain sur des questions basiques déjà répondues ici."
+        ),
+    )
+
     def google_maps_url(self) -> str:
         """
         Lien direct vers Google Maps — pas d'API, pas de clé, pas de
@@ -210,3 +222,5 @@ class Annonce(models.Model):
         verbose_name = "Annonce (bandeau)"
         verbose_name_plural = "Annonces (bandeau)"
         ordering = ["-date_debut"]
+
+

@@ -176,5 +176,3 @@ def _mettre_a_jour_statut(statut: dict) -> None:
     MessageWhatsApp.objects.filter(wamid=wamid).update(
         statut_livraison=statut.get("status", "")
     )
-
-
