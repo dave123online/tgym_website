@@ -93,5 +93,3 @@ def synchroniser_contact_masse(sender, instance, **kwargs):
     if instance.telephone:
         telephone = numero_international(instance.telephone)
         ContactMasse.objects.filter(telephone=telephone, actif=True).update(actif=False)
-
-

@@ -40,4 +40,3 @@ def site_config(request):
         "actualite_phare": actualite_phare,
         "canonical_url": canonical_url,
     }
-
