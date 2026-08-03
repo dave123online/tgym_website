@@ -347,6 +347,8 @@ def telecharger_et_stocker_media(media_id: str) -> str | None:
     message entrant juste parce que le téléchargement du média a raté
     (le message texte/placeholder reste enregistré normalement).
     """
+    import requests
+
     if not _credentials_pretes():
         logger.warning("Téléchargement média WhatsApp impossible — credentials absents.")
         return None
