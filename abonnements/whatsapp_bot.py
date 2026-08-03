@@ -258,13 +258,29 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
             model=GEMINI_MODEL,
             history=_historique_conversation(conversation, types),
             config=types.GenerateContentConfig(
-                system_instruction=_instructions_systeme(conversation)
+                system_instruction=_instructions_systeme(conversation),
+                # Mode JSON structuré natif de l'API : garantit une sortie
+                # conforme au schéma, plutôt que de compter sur le modèle
+                # pour respecter une consigne texte "réponds en JSON" — ce
+                # dernier a déjà répondu en texte libre malgré l'instruction
+                # (ex: "Qu'est-ce que TGYM?" → réponse correcte mais en
+                # texte brut, provoquant un échec de parsing et une
+                # escalade à tort). response_schema élimine cette classe
+                # d'erreur à la source, côté API, plutôt qu'en devinant/
+                # nettoyant le texte après coup.
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "reponse": {"type": "STRING"},
+                        "needs_human": {"type": "BOOLEAN"},
+                    },
+                    "required": ["reponse", "needs_human"],
+                },
             ),
         )
         response = chat.send_message(message)
         texte = (response.text or "").strip()
-        # Gemini peut entourer le JSON de ```json ... ``` malgré la consigne : on nettoie.
-        texte = texte.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     except errors.APIError as exc:
         logger.error(
             "Échec de l'appel Gemini pour le bot WhatsApp (conversation %s) — code=%s status=%s message=%s",
@@ -281,10 +297,16 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
     try:
         return json.loads(texte)
     except json.JSONDecodeError:
+        # Filet de sécurité si jamais le schéma structuré échoue quand
+        # même (ex: réponse tronquée par une coupure réseau) : on ne
+        # perd plus la réponse de Gemini, on essaie de la récupérer telle
+        # quelle plutôt que d'escalader inutilement une réponse correcte.
         logger.error(
-            "Réponse Gemini non-JSON pour le bot WhatsApp (conversation %s) : %r",
-            conversation.wa_id, texte[:300],
+            "Réponse Gemini non-JSON malgré response_schema pour le bot WhatsApp "
+            "(conversation %s) : %r", conversation.wa_id, texte[:300],
         )
+        if texte:
+            return {"reponse": texte, "needs_human": False}
         return None
 
 
