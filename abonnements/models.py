@@ -255,6 +255,12 @@ class MessageWhatsApp(models.Model):
         help_text="sent / delivered / read / failed — mis à jour via les webhooks 'statuses'.",
     )
     date_envoi = models.DateTimeField("Date", auto_now_add=True)
+    media_url = models.URLField(
+        "Média (image/audio/document)", blank=True, default="",
+        help_text="URL Cloudinary permanente du média reçu — les URLs fournies par "
+                   "Meta pour télécharger un média expirent au bout de 5 minutes, donc "
+                   "on le retélécharge et le réhéberge une seule fois à la réception.",
+    )
     payload_brut = models.JSONField(
         "Payload brut", null=True, blank=True,
         help_text="Copie du payload webhook Meta pour ce message, utile pour du débug.",

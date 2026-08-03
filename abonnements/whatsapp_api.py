@@ -332,3 +332,55 @@ def envoyer_template_relance(abonnement) -> dict:
     )
 
     return reponse_json
+
+
+def telecharger_et_stocker_media(media_id: str) -> str | None:
+    """
+    Télécharge un média reçu par WhatsApp (image, audio, document...) via
+    l'API Graph de Meta et le réhéberge sur Cloudinary pour obtenir une
+    URL permanente. Nécessaire car l'URL de téléchargement fournie par
+    Meta expire au bout de 5 minutes — inutilisable pour un affichage
+    ultérieur côté staff ou pour l'envoyer à Gemini après coup.
+
+    Retourne None (sans lever d'exception) en cas d'échec à n'importe
+    quelle étape : on ne veut jamais faire planter l'enregistrement du
+    message entrant juste parce que le téléchargement du média a raté
+    (le message texte/placeholder reste enregistré normalement).
+    """
+    if not _credentials_pretes():
+        logger.warning("Téléchargement média WhatsApp impossible — credentials absents.")
+        return None
+
+    headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
+
+    try:
+        # Étape 1 : résoudre l'ID média en URL de téléchargement temporaire.
+        reponse_meta = requests.get(
+            f"https://graph.facebook.com/{GRAPH_API_VERSION}/{media_id}",
+            headers=headers, timeout=TIMEOUT_SECONDS,
+        )
+        reponse_meta.raise_for_status()
+        url_temporaire = reponse_meta.json().get("url")
+        if not url_temporaire:
+            logger.error("Pas d'URL retournée par Meta pour le média %s.", media_id)
+            return None
+
+        # Étape 2 : télécharger le binaire (nécessite le même token en Authorization).
+        reponse_binaire = requests.get(url_temporaire, headers=headers, timeout=TIMEOUT_SECONDS)
+        reponse_binaire.raise_for_status()
+
+        # Étape 3 : réhéberger sur Cloudinary (URL permanente, pas d'expiration).
+        import cloudinary.uploader
+
+        resultat_upload = cloudinary.uploader.upload(
+            reponse_binaire.content,
+            resource_type="auto",  # laisse Cloudinary détecter image/vidéo/brut
+            folder="whatsapp_medias/",
+        )
+        return resultat_upload.get("secure_url")
+    except requests.RequestException:
+        logger.exception("Échec réseau lors du téléchargement du média WhatsApp %s.", media_id)
+        return None
+    except Exception:
+        logger.exception("Échec inattendu lors du traitement du média WhatsApp %s.", media_id)
+        return None

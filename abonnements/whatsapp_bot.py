@@ -22,6 +22,7 @@ de laisser le client sans réponse.
 import json
 import logging
 
+import requests
 from django.conf import settings
 
 from .models import ConversationWhatsApp, MessageWhatsApp
@@ -243,7 +244,7 @@ def _historique_conversation(conversation: ConversationWhatsApp, types_module) -
     return historique
 
 
-def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict | None:
+def _demander_a_gemini(conversation: ConversationWhatsApp, message: str, media_url: str = "") -> dict | None:
     api_key = getattr(settings, "GEMINI_API_KEY", "")
     if not api_key:
         logger.info("GEMINI_API_KEY absente — bot WhatsApp indisponible.")
@@ -259,15 +260,6 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
             history=_historique_conversation(conversation, types),
             config=types.GenerateContentConfig(
                 system_instruction=_instructions_systeme(conversation),
-                # Mode JSON structuré natif de l'API : garantit une sortie
-                # conforme au schéma, plutôt que de compter sur le modèle
-                # pour respecter une consigne texte "réponds en JSON" — ce
-                # dernier a déjà répondu en texte libre malgré l'instruction
-                # (ex: "Qu'est-ce que TGYM?" → réponse correcte mais en
-                # texte brut, provoquant un échec de parsing et une
-                # escalade à tort). response_schema élimine cette classe
-                # d'erreur à la source, côté API, plutôt qu'en devinant/
-                # nettoyant le texte après coup.
                 response_mime_type="application/json",
                 response_schema={
                     "type": "OBJECT",
@@ -279,7 +271,32 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
                 },
             ),
         )
-        response = chat.send_message(message)
+
+        # Si le message contient une image (photo de reçu de paiement,
+        # capture d'écran, blessure à montrer au coach, etc.), on
+        # l'attache en tant que contenu multimodal — Gemini la "voit"
+        # réellement, plutôt que de recevoir juste le texte placeholder
+        # "[image]" qui ne lui apprend rien et le forçait à escalader.
+        contenu_message = [message]
+        if media_url:
+            try:
+                telechargement = requests.get(media_url, timeout=10)
+                telechargement.raise_for_status()
+                mime_type = telechargement.headers.get("Content-Type", "image/jpeg")
+                if mime_type.startswith("image/"):
+                    contenu_message.append(
+                        types.Part.from_bytes(data=telechargement.content, mime_type=mime_type)
+                    )
+                # Audio/vidéo/document : pas de support vision, le texte
+                # placeholder ("[audio]", "[document]"...) reste envoyé
+                # tel quel — Gemini peut au moins demander une reformulation.
+            except Exception:
+                logger.exception(
+                    "Échec de récupération de l'image pour envoi à Gemini (conversation %s).",
+                    conversation.wa_id,
+                )
+
+        response = chat.send_message(contenu_message)
         texte = (response.text or "").strip()
     except errors.APIError as exc:
         logger.error(
@@ -310,7 +327,7 @@ def _demander_a_gemini(conversation: ConversationWhatsApp, message: str) -> dict
         return None
 
 
-def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> None:
+def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str, media_url: str = "") -> None:
     """Point d'entrée appelé par le webhook juste après l'enregistrement
     d'un message entrant. Ne fait rien si la conversation est déjà en
     mode humain (escaladée) — le staff garde la main tant qu'il ne la
@@ -324,7 +341,7 @@ def traiter_message_entrant(conversation: ConversationWhatsApp, texte: str) -> N
         return
 
     # 2. Tentative de réponse par Gemini, à partir des données réelles.
-    resultat = _demander_a_gemini(conversation, texte)
+    resultat = _demander_a_gemini(conversation, texte, media_url=media_url)
     if resultat is None or resultat.get("needs_human"):
         raison = "Gemini indisponible" if resultat is None else "Gemini a indiqué needs_human=true"
         _escalader(conversation, raison=raison)
