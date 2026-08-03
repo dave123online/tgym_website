@@ -24,6 +24,7 @@
     .bulle.sortant { background:#dcf8c6; color:#111; }
     .bulle.entrant { background:var(--card-bg); color:var(--text); border:1px solid var(--border); }
     .bulle__meta { font-size:11px; color:#667781; margin-top:4px; text-align:right; }
+    .bulle__media { max-width:100%; border-radius:8px; margin-bottom:6px; display:block; }
     .conv-vide-fil { color:var(--text-muted); text-align:center; padding:20px 0; }
 
     .conv-fenetre { margin:14px 0; font-size:14px; }
@@ -59,6 +60,19 @@
     {% for msg in fil_messages %}
     <div class="bulle-ligne {{ msg.sens }}">
         <div class="bulle {{ msg.sens }}">
+            {% if msg.media_url %}
+                {% if "image" in msg.contenu %}
+                    <a href="{{ msg.media_url }}" target="_blank" rel="noopener">
+                        <img src="{{ msg.media_url }}" alt="Image envoyée par le client" class="bulle__media">
+                    </a>
+                {% elif "video" in msg.contenu %}
+                    <video src="{{ msg.media_url }}" controls class="bulle__media"></video>
+                {% elif "audio" in msg.contenu %}
+                    <audio src="{{ msg.media_url }}" controls></audio>
+                {% else %}
+                    <a href="{{ msg.media_url }}" target="_blank" rel="noopener">📎 Voir le fichier joint</a>
+                {% endif %}
+            {% endif %}
             <div>{{ msg.contenu }}</div>
             <div class="bulle__meta">
                 {{ msg.date_envoi|date:"d/m H:i" }}

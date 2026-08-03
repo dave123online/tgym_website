@@ -119,12 +119,25 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
 
     contenu = _extraire_contenu(msg)
 
+    # Média (image/vidéo/audio/document/sticker) : on télécharge et
+    # réhéberge tout de suite sur Cloudinary, l'URL Meta expirant en 5 min
+    # — indispensable pour pouvoir l'afficher côté staff plus tard, et
+    # pour pouvoir le transmettre à Gemini (cf. whatsapp_bot.py).
+    media_url = ""
+    type_msg = msg.get("type")
+    if type_msg in ("image", "video", "audio", "document", "sticker"):
+        media_id = msg.get(type_msg, {}).get("id")
+        if media_id:
+            from .whatsapp_api import telecharger_et_stocker_media
+            media_url = telecharger_et_stocker_media(media_id) or ""
+
     _, created = MessageWhatsApp.objects.update_or_create(
         wamid=msg.get("id"),
         defaults={
             "conversation": conversation,
             "sens": MessageWhatsApp.Sens.ENTRANT,
             "contenu": contenu,
+            "media_url": media_url,
             "categorie": MessageWhatsApp.Categorie.SESSION,
             "est_facturable": False,  # les messages reçus ne sont jamais facturés
             "payload_brut": msg,
@@ -144,7 +157,7 @@ def _enregistrer_message_entrant(value: dict, msg: dict) -> None:
 
     from .whatsapp_bot import traiter_message_entrant
     try:
-        traiter_message_entrant(conversation, contenu)
+        traiter_message_entrant(conversation, contenu, media_url=media_url)
     except Exception:
         logger.exception("Échec du traitement bot pour la conversation %s.", conversation.wa_id)
     # Toute réponse envoyée dans les 24h suivant CE message sera gratuite —
