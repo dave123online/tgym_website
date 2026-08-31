@@ -1,15 +1,17 @@
 {% extends "base.html" %}
+{% load media_optimise %}
 
 {% block content %}
 
 <section class="hero {% if site_config.hero_image or site_config.hero_video %}hero--media{% endif %}">
     {% if site_config.hero_video %}
-        <video class="hero__bg" autoplay muted loop playsinline poster="{% if site_config.hero_image %}{{ site_config.hero_image.url }}{% endif %}">
-            <source src="{{ site_config.hero_video.url }}" type="video/mp4">
+        <video class="hero__bg js-video-adaptive" muted loop playsinline
+               poster="{% if site_config.hero_image %}{{ site_config.hero_image.url|cloud_img }}{% endif %}">
+            <source data-src="{{ site_config.hero_video.url|cloud_video }}" type="video/mp4">
         </video>
         <div class="hero__overlay"></div>
     {% elif site_config.hero_image %}
-        <img class="hero__bg" src="{{ site_config.hero_image.url }}" alt="Ambiance de la salle {{ site_config.nom }}">
+        <img class="hero__bg" src="{{ site_config.hero_image.url|cloud_img }}" alt="Ambiance de la salle {{ site_config.nom }}">
         <div class="hero__overlay"></div>
     {% endif %}
 
@@ -64,14 +66,14 @@
         <div class="video-wall">
             {% for video in videos_generales %}
             <div class="video-wall__tile">
-                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <video class="js-video-adaptive" {% if video.apercu %}poster="{{ video.apercu.url|cloud_img }}"{% endif %} muted loop playsinline data-src="{{ video.fichier.url|cloud_video }}"></video>
                 <span class="video-wall__play">▶</span>
                 {% if video.legende %}<span class="video-wall__legende">{{ video.legende }}</span>{% endif %}
             </div>
             {% endfor %}
             {% for photo in galerie %}
             <div class="video-wall__tile">
-                <img src="{{ photo.image.url }}" alt="{{ photo.legende|default:site_config.nom }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
+                <img src="{{ photo.image.url|cloud_img }}" alt="{{ photo.legende|default:site_config.nom }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
                 {% if photo.legende %}<span class="video-wall__legende">{{ photo.legende }}</span>{% endif %}
             </div>
             {% endfor %}
@@ -90,9 +92,9 @@
             {% with video_phare=videos_activite.first %}
             <div class="programme-phare__ecran">
                 {% if video_phare %}
-                    <video src="{{ video_phare.fichier.url }}" {% if video_phare.apercu %}poster="{{ video_phare.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                    <video class="js-video-adaptive" {% if video_phare.apercu %}poster="{{ video_phare.apercu.url|cloud_img }}"{% endif %} muted loop playsinline data-src="{{ video_phare.fichier.url|cloud_video }}"></video>
                 {% elif galerie.first %}
-                    <img src="{{ galerie.first.image.url }}" alt="{{ programme_phare.titre }}">
+                    <img src="{{ galerie.first.image.url|cloud_img }}" alt="{{ programme_phare.titre }}">
                 {% endif %}
                 <span class="programme-phare__badge">Programme phare</span>
             </div>
@@ -109,7 +111,7 @@
         <div class="activite-row">
             {% for video in videos_activite|slice:"1:5" %}
             <div class="activite-row__tile">
-                <video src="{{ video.fichier.url }}" {% if video.apercu %}poster="{{ video.apercu.url }}"{% endif %} autoplay muted loop playsinline></video>
+                <video class="js-video-adaptive" {% if video.apercu %}poster="{{ video.apercu.url|cloud_img }}"{% endif %} muted loop playsinline data-src="{{ video.fichier.url|cloud_video }}"></video>
                 {% if video.legende %}<span class="activite-row__legende">{{ video.legende }}</span>{% endif %}
             </div>
             {% endfor %}
@@ -130,13 +132,13 @@
                     {% for video in videos_temoignages %}
                     <button type="button"
                             class="temoignages-carrousel__vignette{% if forloop.first %} is-active{% endif %}"
-                            data-src="{{ video.fichier.url }}"
-                            data-poster="{% if video.apercu %}{{ video.apercu.url }}{% endif %}"
+                            data-src="{{ video.fichier.url|cloud_video }}"
+                            data-poster="{% if video.apercu %}{{ video.apercu.url|cloud_img }}{% endif %}"
                             aria-label="{{ video.legende|default:"Révélation" }}">
                         {% if video.apercu %}
-                            <img src="{{ video.apercu.url }}" alt="">
+                            <img src="{{ video.apercu.url|cloud_img }}" alt="">
                         {% else %}
-                            <video src="{{ video.fichier.url }}#t=0.5" preload="metadata" muted playsinline data-vignette-fallback></video>
+                            <video src="{{ video.fichier.url|cloud_video }}#t=0.5" preload="metadata" muted playsinline data-vignette-fallback></video>
                         {% endif %}
                         <span class="temoignages-carrousel__play">▶</span>
                         {% if video.legende %}<span>{{ video.legende }}</span>{% endif %}
@@ -236,7 +238,7 @@
         <div class="grid-3">
             {% for actu in actus_recentes %}
             <div class="actu-preview-card">
-                {% if actu.image %}<img src="{{ actu.image.url }}" alt="{{ actu.titre }}" loading="lazy">{% endif %}
+                {% if actu.image %}<img src="{{ actu.image.url|cloud_img:600 }}" alt="{{ actu.titre }}" loading="lazy">{% endif %}
                 <div class="actu-preview-card__body">
                     <p class="actu-preview-card__cat">{{ actu.get_categorie_display }}</p>
                     <h3>{{ actu.titre }}</h3>
