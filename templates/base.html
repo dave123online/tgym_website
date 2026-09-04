@@ -6,6 +6,76 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
     <link rel="canonical" href="{{ canonical_url }}">
+<!-- ===== SEO (injecté par Digital Neighbor) ===== -->
+<meta name="description" content="{% block meta_description %}{{ site_config.nom }} — {{ site_config.slogan }}. Salle de sport & coaching à {{ site_config.adresse_zone }}. Programmes personnalisés, encadrement réel, ouvert 7j/7.{% endblock %}"/>
+
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="website"/>
+<meta property="og:locale" content="fr_FR"/>
+<meta property="og:title" content="{% block og_title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}"/>
+<meta property="og:description" content="Salle de sport & coaching à {{ site_config.adresse_zone }}. Ouvert 7j/7. Rejoins-nous !"/>
+<meta property="og:url" content="{{ canonical_url }}"/>
+{% if site_config.hero_image %}<meta property="og:image" content="{{ site_config.hero_image.url }}"/>{% endif %}
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="google-site-verification" content="SBPR79lPz3hjTxMMhZ1yaklVx73lZ499QkYEc1WqqJM" />
+
+<!-- Données structurées : la salle + FAQ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": ["ExerciseGym", "LocalBusiness"],
+      "@id": "{{ request.scheme }}://{{ request.get_host }}/#salle",
+      "name": "{{ site_config.nom }}",
+      "slogan": "{{ site_config.slogan }}",
+      "description": "Salle de sport et de coaching à {{ site_config.adresse_zone }}. Programmes personnalisés, encadrement et suivi, ouvert 7j/7.",
+      "url": "{{ request.scheme }}://{{ request.get_host }}/",
+      "telephone": "{{ site_config.whatsapp_numero_1 }}",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "{{ site_config.adresse_zone }}",
+        "addressLocality": "Abomey-Calavi",
+        "addressCountry": "BJ"
+      },
+      {% if site_config.latitude and site_config.longitude %}
+      "geo": { "@type": "GeoCoordinates", "latitude": {{ site_config.latitude }}, "longitude": {{ site_config.longitude }} },
+      {% endif %}
+      "openingHours": "Mo-Su 07:00-23:00",
+      "sameAs": [
+        {% if site_config.facebook_url %}"{{ site_config.facebook_url }}"{% if site_config.instagram_url %},{% endif %}{% endif %}
+        {% if site_config.instagram_url %}"{{ site_config.instagram_url }}"{% endif %}
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Où se trouve {{ site_config.nom }} ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "{{ site_config.adresse_zone }}. {{ site_config.adresse_reperes }}" }
+        },
+        {
+          "@type": "Question",
+          "name": "Quels sont les horaires d'ouverture ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "La salle est ouverte 7j/7. {{ site_config.horaires_texte }}" }
+        },
+        {
+          "@type": "Question",
+          "name": "Comment s'inscrire à la salle ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Crée ton compte directement sur le site (page Connexion) ou écris-nous sur WhatsApp au {{ site_config.whatsapp_numero_1 }}." }
+        },
+        {
+          "@type": "Question",
+          "name": "Proposez-vous un coaching personnalisé ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Oui, des programmes avec suivi adapté à ton objectif sont proposés. Consulte la page Programmes pour les détails." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+<!-- ===== FIN SEO ===== -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">

@@ -22,5 +22,14 @@
         <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">← Retour aux actualités</a>
     </div>
 </section>
-
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "{{ actualite.titre }}",
+  "datePublished": "{{ actualite.date_publication|date:'c' }}",
+  "author": { "@type": "Organization", "name": "{{ site_config.nom }}" },
+  "mainEntityOfPage": "{{ canonical_url }}"
+}
+</script>
 {% endblock %}
