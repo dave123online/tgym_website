@@ -1,5 +1,49 @@
 {% extends "base.html" %}
 
+{% block title %}{{ programme.titre }} — {{ site_config.nom }}{% endblock %}
+{% block meta_description %}{{ programme.accroche }}{% endblock %}
+{% block og_title %}{{ programme.titre }} — {{ site_config.nom }}{% endblock %}
+{% block og_description %}{{ programme.accroche }}{% endblock %}
+{% block og_type %}article{% endblock %}
+
+{% block jsonld_page %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {"@type": "ListItem", "position": 1, "name": "Accueil", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'core:accueil' %}"},
+        {"@type": "ListItem", "position": 2, "name": "Programmes", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'coaching:programmes' %}"},
+        {"@type": "ListItem", "position": 3, "name": "{{ programme.titre|escapejs }}", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'coaching:programme_detail' programme.slug %}"}
+      ]
+    },
+    {
+      "@type": "Course",
+      "name": "{{ programme.titre|escapejs }}",
+      "description": "{{ programme.accroche|escapejs }}",
+      "provider": {
+        "@type": "Organization",
+        "name": "{{ site_config.nom|escapejs }}",
+        "sameAs": "{{ request.scheme }}://{{ request.get_host }}/"
+      },
+      "hasCourseInstance": {
+        "@type": "CourseInstance",
+        "courseMode": "Onsite",
+        "location": {
+          "@type": "Place",
+          "name": "{{ site_config.nom|escapejs }}",
+          "address": {"@type": "PostalAddress", "addressLocality": "Abomey-Calavi", "addressCountry": "BJ"}
+        }
+      }{% if programme.prix_fcfa %},
+      "offers": {"@type": "Offer", "price": "{{ programme.prix_fcfa }}", "priceCurrency": "XOF", "availability": "https://schema.org/InStock"}{% endif %}
+    }
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 
 <section class="hero">
@@ -55,3 +99,5 @@
 {% endif %}
 
 {% endblock %}
+
+

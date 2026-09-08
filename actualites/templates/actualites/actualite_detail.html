@@ -1,5 +1,41 @@
 {% extends "base.html" %}
 
+{% block title %}{{ actualite.titre }} — {{ site_config.nom }}{% endblock %}
+{% block meta_description %}{{ actualite.accroche }}{% endblock %}
+{% block og_title %}{{ actualite.titre }} — {{ site_config.nom }}{% endblock %}
+{% block og_description %}{{ actualite.accroche }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% if actualite.image %}
+{% block og_image %}<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ actualite.image.url }}">{% endblock %}
+{% endif %}
+
+{% block jsonld_page %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {"@type": "ListItem", "position": 1, "name": "Accueil", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'core:accueil' %}"},
+        {"@type": "ListItem", "position": 2, "name": "Actualités", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'actualites:actualites' %}"},
+        {"@type": "ListItem", "position": 3, "name": "{{ actualite.titre|escapejs }}", "item": "{{ request.scheme }}://{{ request.get_host }}{% url 'actualites:actualite_detail' actualite.slug %}"}
+      ]
+    },
+    {
+      "@type": "Article",
+      "headline": "{{ actualite.titre|escapejs }}",
+      "description": "{{ actualite.accroche|escapejs }}",
+      {% if actualite.image %}"image": "{{ request.scheme }}://{{ request.get_host }}{{ actualite.image.url }}",{% endif %}
+      "datePublished": "{{ actualite.date_publication|date:'c' }}",
+      "author": {"@type": "Organization", "name": "{{ site_config.nom|escapejs }}"},
+      "mainEntityOfPage": "{{ canonical_url }}"
+    }
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 
 <section class="hero">
@@ -22,14 +58,6 @@
         <a href="{% url 'actualites:actualites' %}" class="btn btn-outline">← Retour aux actualités</a>
     </div>
 </section>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": "{{ actualite.titre }}",
-  "datePublished": "{{ actualite.date_publication|date:'c' }}",
-  "author": { "@type": "Organization", "name": "{{ site_config.nom }}" },
-  "mainEntityOfPage": "{{ canonical_url }}"
-}
-</script>
 {% endblock %}
+
+

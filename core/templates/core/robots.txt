@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /chatbot/message/
+Disallow: /mon-espace/
+Disallow: /mot-de-passe/
 
 Sitemap: {{ request.scheme }}://{{ request.get_host }}/sitemap.xml

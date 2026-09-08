@@ -8,6 +8,7 @@ from django.views.decorators.http import require_POST
 
 from abonnements.models import Plan
 from actualites.models import Actualite
+from coaching.models import Programme
 from core.chatbot import LIMITE_MESSAGES_PAR_JOUR, MAX_TOURS_HISTORIQUE, obtenir_reponse
 from core.models import PhotoSalle, VideoSalle
 from core.whatsapp import build_generic_whatsapp_link, build_plan_whatsapp_link
@@ -154,3 +155,24 @@ def chatbot_message(request):
     request.session["chatbot_compteur"] = compteur
 
     return JsonResponse({"reponse": reponse})
+
+
+
+def sitemap_xml(request):
+    """
+    Sitemap dynamique : liste les pages statiques ET chaque programme actif
+    / actualité publiée avec sa propre URL et sa propre date de dernière
+    modification (lastmod), pour que Google découvre et priorise les
+    fiches individuelles au lieu de ne voir que les pages listes.
+
+    Volontairement un simple TemplateResponse XML (pas django.contrib.sitemaps)
+    pour ne pas ajouter de dépendance ni de migration : ce projet n'a pas de
+    champ date_modification sur Programme, donc lastmod n'est fourni que
+    pour les actualités (qui ont date_publication).
+    """
+    programmes = Programme.objects.filter(actif=True)
+    actualites = Actualite.objects.filter(est_publiee=True)
+    return render(request, "core/sitemap.xml", {
+        "programmes": programmes,
+        "actualites": actualites,
+    }, content_type="application/xml")

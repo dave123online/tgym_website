@@ -11,14 +11,16 @@
     <link rel="canonical" href="{{ canonical_url }}">
     
     <!-- ===== OPEN GRAPH (Facebook, LinkedIn, WhatsApp) ===== -->
-    <meta property="og:type" content="website">
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
     <meta property="og:locale" content="fr_FR">
     <meta property="og:title" content="{% block og_title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}">
-    <meta property="og:description" content="Salle de sport & coaching à {{ site_config.adresse_zone }}. Ouvert 7j/7. Rejoins-nous !">
+    <meta property="og:description" content="{% block og_description %}Salle de sport & coaching à {{ site_config.adresse_zone }}. Ouvert 7j/7. Rejoins-nous !{% endblock %}">
     <meta property="og:url" content="{{ canonical_url }}">
+    {% block og_image %}
     {% if site_config.hero_image %}
-    <meta property="og:image" content="{{ site_config.hero_image.url }}">
+    <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ site_config.hero_image.url }}">
     {% endif %}
+    {% endblock %}
     
     <!-- ===== TWITTER CARD ===== -->
     <meta name="twitter:card" content="summary_large_image">
@@ -34,20 +36,20 @@
         {
           "@type": ["ExerciseGym", "LocalBusiness"],
           "@id": "{{ request.scheme }}://{{ request.get_host }}/#salle",
-          "name": "{{ site_config.nom }}",
-          "slogan": "{{ site_config.slogan }}",
-          "description": "Salle de sport et de coaching à {{ site_config.adresse_zone }}. Programmes personnalisés, encadrement et suivi, ouvert 7j/7.",
+          "name": "{{ site_config.nom|escapejs }}",
+          "slogan": "{{ site_config.slogan|escapejs }}",
+          "description": "Salle de sport et de coaching à {{ site_config.adresse_zone|escapejs }}. Programmes personnalisés, encadrement et suivi, ouvert 7j/7.",
           "url": "{{ request.scheme }}://{{ request.get_host }}/",
           "telephone": "+229{{ site_config.whatsapp_numero_1 }}",
           "priceRange": "$$",
           "currenciesAccepted": "XOF",
           "paymentAccepted": "Cash, Mobile Money",
           {% if site_config.hero_image %}
-          "image": "{{ site_config.hero_image.url }}",
+          "image": "{{ request.scheme }}://{{ request.get_host }}{{ site_config.hero_image.url }}",
           {% endif %}
           "address": {
             "@type": "PostalAddress",
-            "streetAddress": "{{ site_config.adresse_zone }}",
+            "streetAddress": "{{ site_config.adresse_zone|escapejs }}",
             "addressLocality": "Abomey-Calavi",
             "addressRegion": "Atlantique",
             "addressCountry": "BJ"
@@ -83,10 +85,10 @@
           "mainEntity": [
             {
               "@type": "Question",
-              "name": "Où se trouve {{ site_config.nom }} ?",
+              "name": "Où se trouve {{ site_config.nom|escapejs }} ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "{{ site_config.adresse_zone }}. {{ site_config.adresse_reperes }}"
+                "text": "{{ site_config.adresse_zone|escapejs }}. {{ site_config.adresse_reperes|escapejs }}"
               }
             },
             {
@@ -94,7 +96,7 @@
               "name": "Quels sont les horaires d'ouverture ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "La salle est ouverte 7j/7. {{ site_config.horaires_texte }}"
+                "text": "La salle est ouverte 7j/7. {{ site_config.horaires_texte|escapejs }}"
               }
             },
             {
@@ -118,7 +120,10 @@
       ]
     }
     </script>
-    
+
+    <!-- ===== DONNÉES STRUCTURÉES SPÉCIFIQUES À LA PAGE (Breadcrumb, Article, Course...) ===== -->
+    {% block jsonld_page %}{% endblock %}
+
     <!-- ===== RESSOURCES ===== -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -461,3 +466,5 @@
 
 </body>
 </html>
+
+
