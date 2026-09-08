@@ -5,9 +5,11 @@
 {% block og_title %}{{ actualite.titre }} — {{ site_config.nom }}{% endblock %}
 {% block og_description %}{{ actualite.accroche }}{% endblock %}
 {% block og_type %}article{% endblock %}
+{% block og_image %}
 {% if actualite.image %}
-{% block og_image %}<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ actualite.image.url }}">{% endblock %}
+<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ actualite.image.url }}">
 {% endif %}
+{% endblock %}
 
 {% block jsonld_page %}
 <script type="application/ld+json">
