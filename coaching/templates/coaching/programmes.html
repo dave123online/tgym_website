@@ -1,11 +1,28 @@
 {% extends "base.html" %}
 
+{% block title %}Programmes de Coaching & Musculation à Abomey-Calavi | {{ site_config.nom }}{% endblock %}
+{% block meta_description %}Découvrez les programmes T-GYM à Abomey-Calavi : prise de masse, sèche, remise en forme et coaching personnalisé avec suivi. Résultats concrets, encadrement réel.{% endblock %}
+
+{% block jsonld_page %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Accueil", "item": "{{ request.scheme }}://{{ request.get_host }}/"},
+    {"@type": "ListItem", "position": 2, "name": "Programmes", "item": "{{ canonical_url }}"}
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 
 <section class="section section--dark">
     <div class="container">
         <p class="eyebrow">Nos programmes</p>
-        <h2 style="color:var(--white);">Des accompagnements pensés pour des résultats concrets</h2>
+        <h1 style="color:var(--white);">Programmes de coaching & musculation à Abomey-Calavi</h1>
+        <p>Des accompagnements pensés pour des résultats concrets.</p>
     </div>
 </section>
 

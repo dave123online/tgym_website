@@ -1,11 +1,28 @@
 {% extends "base.html" %}
 
+{% block title %}Tarifs & Abonnements Salle de Sport | {{ site_config.nom }} Abomey-Calavi{% endblock %}
+{% block meta_description %}Grille tarifaire T-GYM à Abomey-Calavi : abonnements mensuels et formules flexibles, coaching inclus. Inscrivez-vous en 2 clics sur WhatsApp.{% endblock %}
+
+{% block jsonld_page %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Accueil", "item": "{{ request.scheme }}://{{ request.get_host }}/"},
+    {"@type": "ListItem", "position": 2, "name": "Tarifs", "item": "{{ canonical_url }}"}
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 
 <section class="section">
     <div class="container">
         <p class="eyebrow">Pricing</p>
-        <h2>Des offres claires pour chaque profil</h2>
+        <h1>Tarifs & abonnements — salle de sport à Abomey-Calavi</h1>
+        <p>Des offres claires pour chaque profil, sans frais cachés.</p>
 
         <div class="grid-2" style="align-items:start;">
             <div>
