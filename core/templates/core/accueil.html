@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% load media_optimise %}
 
+{% block title %}{{ site_config.nom }} | Salle de Sport & Fitness à Abomey-Calavi{% endblock %}
+{% block meta_description %}Salle de sport & fitness à Abomey-Calavi (tronçon Tokan – Houètô) : musculation, coaching personnalisé, nutrition. Ouvert 7j/7. Premier contact sur WhatsApp.{% endblock %}
+{% block og_title %}{{ site_config.nom }} | Salle de Sport & Fitness à Abomey-Calavi{% endblock %}
+
 {% block content %}
 
 <section class="hero {% if site_config.hero_image or site_config.hero_video %}hero--media{% endif %}">
@@ -16,9 +20,9 @@
     {% endif %}
 
     <div class="container">
-        <h1>{{ site_config.nom }}</h1>
+        <h1>{{ site_config.nom }} — Salle de Sport à Abomey-Calavi</h1>
         <p class="slogan">{{ site_config.slogan|upper }}</p>
-        <p class="accroche">Une présence physique incontournable, désormais propulsée par un écosystème digital.</p>
+        <p class="accroche">Une présence physique incontournable à Calavi, désormais propulsée par un écosystème digital.</p>
 
         <div class="hero-hours">
             <div>
@@ -201,7 +205,9 @@
 <section class="section section--grey">
     <div class="container">
         <p class="eyebrow">Nous trouver</p>
-        <h2>Une salle à taille humaine, facile d'accès</h2>
+        <h2>Une salle de sport à taille humaine, facile d'accès à Abomey-Calavi</h2>
+        {# Paragraphe sémantique SEO local : requêtes "salle de sport Calavi / Abomey" #}
+        <p>Vous cherchez une <strong>salle de sport à Abomey-Calavi</strong> ? {{ site_config.nom }} vous accueille sur le tronçon Carrefour TOKAN – Carrefour HOUÈTÔ, entre Cotonou et Calavi. Découvrez nos programmes de musculation et de coaching personnalisé sur place ou depuis la page <a href="{% url 'coaching:programmes' %}">Programmes</a>.</p>
         <div class="info-strip">
             <div class="info-strip__item">
                 <div class="info-strip__icon">📍</div>
@@ -227,6 +233,7 @@
         </div>
         <br>
         <a href="{{ site_config.google_maps_url }}" target="_blank" rel="noopener" class="btn btn-outline">Voir l'itinéraire</a>
+        &nbsp;<a href="{% url 'core:ou_nous_trouver' %}" class="btn btn-outline">Toutes les infos pratiques</a>
     </div>
 </section>
 

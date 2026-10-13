@@ -5,25 +5,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <!-- ===== TITRE & META DE BASE ===== -->
-    <title>{% block title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}</title>
-    <meta name="description" content="{% block meta_description %}{{ site_config.nom }} — {{ site_config.slogan }}. Salle de sport & coaching à {{ site_config.adresse_zone }}. Programmes personnalisés, encadrement réel, ouvert 7j/7.{% endblock %}">
+    <!-- ===== TITRE & META DE BASE =====
+         Titles par défaut orientés SEO local (mot-clé + géographie), surchargeables
+         page par page via {% block title %}. Le bloc "seo_local_intro" (vide ici)
+         permet aux pages vitrines d'ajouter un paragraphe d'intro géolocalisé. -->
+    <title>{% block title %}{{ site_config.nom }} | Salle de Sport & Coaching à Abomey-Calavi{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ site_config.nom }}, salle de sport & fitness à Abomey-Calavi (Tokan – Houètô). Musculation, coaching personnalisé et nutrition, ouvert 7j/7. Inscrivez-vous sur WhatsApp !{% endblock %}">
     <link rel="canonical" href="{{ canonical_url }}">
-    
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="geo.region" content="BJ-18">
+    <meta name="geo.placename" content="Abomey-Calavi">
+    {% if site_config.latitude and site_config.longitude %}
+    {# floatformat:"ndot" : force le POINT décimal (le i18n fr-fr rendrait des virgules → méta geo invalide) #}
+    <meta name="geo.position" content="{{ site_config.latitude|floatformat:'ndot' }};{{ site_config.longitude|floatformat:'ndot' }}">
+    <meta name="ICBM" content="{{ site_config.latitude|floatformat:'ndot' }}, {{ site_config.longitude|floatformat:'ndot' }}">
+    {% endif %}
+
     <!-- ===== OPEN GRAPH (Facebook, LinkedIn, WhatsApp) ===== -->
     <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:site_name" content="{{ site_config.nom }}">
     <meta property="og:locale" content="fr_FR">
-    <meta property="og:title" content="{% block og_title %}{{ site_config.nom }} — {{ site_config.slogan }}{% endblock %}">
-    <meta property="og:description" content="{% block og_description %}Salle de sport & coaching à {{ site_config.adresse_zone }}. Ouvert 7j/7. Rejoins-nous !{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}{{ site_config.nom }} | Salle de Sport & Fitness à Abomey-Calavi{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}Salle de sport & coaching à Abomey-Calavi. Ouvert 7j/7. Rejoins-nous !{% endblock %}">
     <meta property="og:url" content="{{ canonical_url }}">
     {% block og_image %}
     {% if site_config.hero_image %}
     <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ site_config.hero_image.url }}">
     {% endif %}
     {% endblock %}
-    
+
     <!-- ===== TWITTER CARD ===== -->
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#e63946">
     
     <!-- ===== GOOGLE VERIFICATION ===== -->
     <meta name="google-site-verification" content="SBPR79lPz3hjTxMMhZ1yaklVx73lZ499QkYEc1WqqJM">
@@ -55,12 +68,15 @@
             "addressCountry": "BJ"
           },
           {% if site_config.latitude and site_config.longitude %}
+          {# NB : |floatformat:"ndot" force le POINT décimal — sans lui, LANGUAGE_CODE='fr-fr'
+             rend les Decimals avec une VIRGULE (ex: "latitude": 6,4483), ce qui produit un
+             JSON invalide et fait rejeter tout le bloc JSON-LD par Google (SEO local annulé). #}
           "geo": {
             "@type": "GeoCoordinates",
-            "latitude": {{ site_config.latitude }},
-            "longitude": {{ site_config.longitude }}
+            "latitude": {{ site_config.latitude|floatformat:"ndot" }},
+            "longitude": {{ site_config.longitude|floatformat:"ndot" }}
           },
-          "hasMap": "https://www.google.com/maps/search/?api=1&query={{ site_config.latitude }},{{ site_config.longitude }}",
+          "hasMap": "https://www.google.com/maps/search/?api=1&query={{ site_config.latitude|floatformat:'ndot' }},{{ site_config.longitude|floatformat:'ndot' }}",
           {% endif %}
           "openingHoursSpecification": [
             {
@@ -70,9 +86,16 @@
               "closes": "23:00"
             }
           ],
+          "areaServed": [
+            {"@type": "City", "name": "Abomey-Calavi"},
+            {"@type": "City", "name": "Cotonou"},
+            {"@type": "AdministrativeArea", "name": "Département de l'Atlantique"}
+          ],
           "sameAs": [
-            {% if site_config.facebook_url %}"{{ site_config.facebook_url }}"{% if site_config.instagram_url %},{% endif %}{% endif %}
-            {% if site_config.instagram_url %}"{{ site_config.instagram_url }}"{% endif %}
+            {% if site_config.facebook_url and site_config.instagram_url %}
+            "{{ site_config.facebook_url|escapejs }}",
+            "{{ site_config.instagram_url|escapejs }}"
+            {% elif site_config.facebook_url %}"{{ site_config.facebook_url|escapejs }}"{% endif %}
           ],
           "amenityFeature": [
             {"@type": "LocationFeatureSpecification", "name": "Parking", "value": true},
@@ -113,6 +136,14 @@
               "acceptedAnswer": {
                 "@type": "Answer",
                 "text": "Oui, des programmes avec suivi adapté à ton objectif sont proposés. Consulte la page Programmes pour les détails."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Y a-t-il une salle de sport à Abomey-Calavi ?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Oui, {{ site_config.nom }} est une salle de sport et de fitness située à {{ site_config.adresse_zone|escapejs }}, ouverte 7j/7 avec encadrement par des coachs professionnels."
               }
             }
           ]
@@ -268,21 +299,26 @@
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Footer -->
+    <!-- Footer — bloc NAP (Name/Address/Phone) cohérent avec le JSON-LD LocalBusiness -->
     <footer class="footer">
         <div class="container">
-            <p><strong>{{ site_config.nom }}</strong> — {{ site_config.slogan }}</p>
+            <p><strong>{{ site_config.nom }}</strong> — Salle de sport & fitness à Abomey-Calavi</p>
+            <address style="font-style: normal;">
+                <p>{{ site_config.adresse_zone }} — {{ site_config.adresse_reperes }}</p>
+                <p>Téléphone / WhatsApp : <a href="tel:+229{{ site_config.whatsapp_numero_1 }}">{{ site_config.whatsapp_numero_1 }}</a> / <a href="tel:+229{{ site_config.whatsapp_numero_2 }}">{{ site_config.whatsapp_numero_2 }}</a></p>
+            </address>
             <p>{{ site_config.horaires_texte }}</p>
             <p>
-                WhatsApp : {{ site_config.whatsapp_numero_1 }} / {{ site_config.whatsapp_numero_2 }}
                 {% if site_config.facebook_url %}
-                    &nbsp;•&nbsp; <a href="{{ site_config.facebook_url }}" target="_blank" rel="noopener">Facebook</a>
+                    <a href="{{ site_config.facebook_url }}" target="_blank" rel="noopener me">Facebook</a>
                 {% endif %}
                 {% if site_config.instagram_url %}
-                    &nbsp;•&nbsp; <a href="{{ site_config.instagram_url }}" target="_blank" rel="noopener">Instagram</a>
+                    &nbsp;•&nbsp; <a href="{{ site_config.instagram_url }}" target="_blank" rel="noopener me">Instagram</a>
                 {% endif %}
+                &nbsp;•&nbsp; <a href="{% url 'core:ou_nous_trouver' %}">Où nous trouver</a>
+                &nbsp;•&nbsp; <a href="{% url 'core:tarifs' %}">Tarifs</a>
+                &nbsp;•&nbsp; <a href="{% url 'coaching:programmes' %}">Programmes</a>
             </p>
-            <p>{{ site_config.adresse_zone }}</p>
             <hr style="margin-top: 50px; opacity: 0.2;">
             <p style="text-align: center; font-size: 0.85em; opacity: 0.6; margin-top: 20px;">
                 Site conçu par <a href="https://digitalneighbor.netlify.app" target="_blank" rel="noopener">Digital Neighbor</a>
