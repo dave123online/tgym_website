@@ -5,10 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <!-- ===== TITRE & META DE BASE =====
-         Titles par défaut orientés SEO local (mot-clé + géographie), surchargeables
-         page par page via {% block title %}. Le bloc "seo_local_intro" (vide ici)
-         permet aux pages vitrines d'ajouter un paragraphe d'intro géolocalisé. -->
     <title>{% block title %}{{ site_config.nom }} | Salle de Sport & Coaching à Abomey-Calavi{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}{{ site_config.nom }}, salle de sport & fitness à Abomey-Calavi (Tokan – Houètô). Musculation, coaching personnalisé et nutrition, ouvert 7j/7. Inscrivez-vous sur WhatsApp !{% endblock %}">
     <link rel="canonical" href="{{ canonical_url }}">
